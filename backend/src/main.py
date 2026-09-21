@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import secrets
+import asyncio
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from typing import Any
@@ -134,8 +135,8 @@ async def supabase_request(
     last_error: Exception | None = None
     for attempt in range(2):
         try:
-            with httpx.Client(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
-                response = client.request(
+            async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
+                response = await client.request(
                     method,
                     f"{supabase_url(request)}{path}",
                     headers=supabase_headers(
@@ -152,6 +153,7 @@ async def supabase_request(
             last_error = exc
             if attempt == 1:
                 return 599, {"message": str(exc)[:300]}
+            await asyncio.sleep(0.05)
     else:
         return 599, {"message": str(last_error)[:300] if last_error else "Supabase request failed"}
     try:
@@ -790,28 +792,6 @@ async def start_session(
     return result[0]
 
 
-@app.post("/api/sessions/{session_id}/lock")
-async def lock_session_question(
-    session_id: str,
-    request: Request,
-    authorization: str | None = Header(default=None),
-) -> dict[str, Any]:
-    token = bearer_token(authorization)
-    await current_teacher_profile(request, token)
-    update_status, result = await supabase_request(
-        request,
-        "PATCH",
-        "/rest/v1/sessions",
-        service_role=True,
-        prefer_representation=True,
-        params={"id": f"eq.{session_id}"},
-        body={"current_question_status": "locked"},
-    )
-    if update_status >= 400 or not result:
-        raise HTTPException(status_code=502, detail="锁定题目失败")
-    return result[0]
-
-
 @app.post("/api/sessions/{session_id}/next")
 async def next_session_question(
     session_id: str,
@@ -854,6 +834,44 @@ async def next_session_question(
         )
     if update_status >= 400 or not result:
         raise HTTPException(status_code=502, detail="切换题目失败")
+    return result[0]
+
+
+@app.post("/api/sessions/{session_id}/previous")
+async def previous_session_question(
+    session_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    status, sessions = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/sessions",
+        access_token=token,
+        params={"id": f"eq.{session_id}", "select": "id,question_set_id,current_question_id,status"},
+    )
+    if status >= 400 or not sessions:
+        raise HTTPException(status_code=404, detail="找不到课堂场次")
+    session = sessions[0]
+    if session["status"] != "active":
+        raise HTTPException(status_code=409, detail="课堂尚未开始或已经结束")
+    questions = await session_questions(request, session["question_set_id"])
+    current_index = next((index for index, question in enumerate(questions) if question["id"] == session.get("current_question_id")), -1)
+    if current_index <= 0:
+        raise HTTPException(status_code=409, detail="已经是第一题")
+    update_status, result = await supabase_request(
+        request,
+        "PATCH",
+        "/rest/v1/sessions",
+        service_role=True,
+        prefer_representation=True,
+        params={"id": f"eq.{session_id}"},
+        body={"current_question_id": questions[current_index - 1]["id"], "current_question_status": "open"},
+    )
+    if update_status >= 400 or not result:
+        raise HTTPException(status_code=502, detail="返回上一题失败")
     return result[0]
 
 

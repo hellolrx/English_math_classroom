@@ -86,12 +86,12 @@ export async function startSession(id) {
   return apiRequest(`/api/sessions/${id}/start`, { method: 'POST' })
 }
 
-export async function lockSession(id) {
-  return apiRequest(`/api/sessions/${id}/lock`, { method: 'POST' })
-}
-
 export async function nextSession(id) {
   return apiRequest(`/api/sessions/${id}/next`, { method: 'POST' })
+}
+
+export async function previousSession(id) {
+  return apiRequest(`/api/sessions/${id}/previous`, { method: 'POST' })
 }
 
 export async function getSessionStats(id) {
