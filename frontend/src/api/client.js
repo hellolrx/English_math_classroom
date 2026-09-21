@@ -51,3 +51,53 @@ export async function importQuestionSet(name, file) {
   body.append('file', file)
   return apiRequest('/api/question-sets/import', { method: 'POST', body })
 }
+
+export async function publishQuestionSet(id) {
+  return apiRequest(`/api/question-sets/${id}/publish`, { method: 'POST' })
+}
+
+export async function getClasses() {
+  return apiRequest('/api/classes')
+}
+
+export async function getSessions() {
+  return apiRequest('/api/sessions')
+}
+
+export async function createSession(payload) {
+  return apiRequest('/api/sessions', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function startSession(id) {
+  return apiRequest(`/api/sessions/${id}/start`, { method: 'POST' })
+}
+
+export async function lockSession(id) {
+  return apiRequest(`/api/sessions/${id}/lock`, { method: 'POST' })
+}
+
+export async function nextSession(id) {
+  return apiRequest(`/api/sessions/${id}/next`, { method: 'POST' })
+}
+
+export async function getSessionStats(id) {
+  return apiRequest(`/api/sessions/${id}/stats`)
+}
+
+export async function getPublicSession(token) {
+  return apiRequest(`/api/public/sessions/${encodeURIComponent(token)}`)
+}
+
+export async function joinPublicSession(token, browserKey) {
+  return apiRequest(`/api/public/sessions/${encodeURIComponent(token)}/join`, {
+    method: 'POST',
+    body: JSON.stringify({ browser_key: browserKey }),
+  })
+}
+
+export async function submitPublicAnswer(token, payload) {
+  return apiRequest(`/api/public/sessions/${encodeURIComponent(token)}/answers`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}

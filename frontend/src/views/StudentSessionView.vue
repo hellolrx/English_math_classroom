@@ -1,0 +1,11 @@
+<script setup>
+import { onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import { getPublicSession, joinPublicSession, submitPublicAnswer } from '../api/client'
+const route = useRoute(); const token = route.params.token; const state = ref(null); const selected = ref(''); const joined = ref(false); const errorMessage = ref(''); let timer
+const browserKey = (() => { const key = localStorage.getItem('hhx_browser_key'); if (key) return key; const next = crypto.randomUUID(); localStorage.setItem('hhx_browser_key', next); return next })()
+async function load() { try { state.value = await getPublicSession(token); if (state.value?.status !== 'closed' && !joined.value) { await joinPublicSession(token, browserKey); joined.value = true } } catch (e) { errorMessage.value = e.message } }
+async function answer(option) { if (!state.value?.question) return; selected.value = option.id; try { await submitPublicAnswer(token, { browser_key: browserKey, question_id: state.value.question.id, selected_option_id: option.id }) } catch (e) { errorMessage.value = e.message } }
+onMounted(async () => { await load(); timer = setInterval(load, 2000) }); onUnmounted(() => clearInterval(timer))
+</script>
+<template><main class="auth-shell"><section class="auth-card student-card student-session-card"><div class="brand-mark student-mark">答</div><p class="eyebrow">ENGLISH MATH CLASSROOM</p><h1>课堂答题</h1><p v-if="errorMessage" class="error-message">{{ errorMessage }}</p><template v-else-if="state?.status === 'waiting'"><p class="muted">已加入课堂，等待老师开始。</p></template><template v-else-if="state?.status === 'active' && state.question"><p class="muted">请选择答案，提交后仍可修改。</p><h2 class="student-question">{{ state.question.question_text }}</h2><div class="student-options"><button v-for="option in state.question.options" :key="option.id" :class="{ selected: selected === option.id }" @click="answer(option)">{{ option.option_key }}. {{ option.option_text }}</button></div><p v-if="selected" class="success-message">答案已提交</p></template><template v-else><p class="muted">本课堂已结束。</p></template></section></main></template>

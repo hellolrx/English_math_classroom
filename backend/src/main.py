@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from typing import Any
 
@@ -29,6 +32,52 @@ app.add_middleware(
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=256)
+
+
+class CreateSessionRequest(BaseModel):
+    question_set_id: str = Field(min_length=1)
+    class_id: str = Field(min_length=1)
+    session_type: str = Field(default="classroom")
+
+
+class AnswerRequest(BaseModel):
+    question_id: str = Field(min_length=1)
+    selected_option_id: str = Field(min_length=1)
+    browser_key: str = Field(min_length=16, max_length=200)
+
+
+class JoinRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def browser_key_hash(browser_key: str) -> str:
+    return hashlib.sha256(browser_key.encode("utf-8")).hexdigest()
+
+
+def public_question(question: dict[str, Any], options: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "id": question["id"],
+        "sort_order": question["sort_order"],
+        "question_text": question.get("question_text"),
+        "question_image_url": question.get("question_image_url"),
+        "explanation": question.get("explanation"),
+        "question_type": question.get("question_type"),
+        "content_type": question.get("content_type"),
+        "options": [
+            {
+                "id": option["id"],
+                "option_key": option["option_key"],
+                "option_text": option.get("option_text"),
+                "option_image_url": option.get("option_image_url"),
+                "content_type": option.get("content_type"),
+            }
+            for option in options
+        ],
+    }
 
 
 def request_env(request: Request) -> Any:
@@ -197,6 +246,41 @@ async def list_question_sets(
         count_rows = question_set.pop("questions", [{"count": 0}])
         normalized_sets.append({**question_set, "question_count": (count_rows[0] or {}).get("count", 0)})
     return normalized_sets
+
+
+@app.post("/api/question-sets/{question_set_id}/publish")
+async def publish_question_set(
+    question_set_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    status, sets = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/question_sets",
+        access_token=token,
+        params={"id": f"eq.{question_set_id}", "select": "id,name,status"},
+    )
+    if status >= 400 or not sets:
+        raise HTTPException(status_code=404, detail="找不到题目集合")
+    if sets[0]["status"] == "published":
+        return sets[0]
+    if sets[0]["status"] == "archived":
+        raise HTTPException(status_code=409, detail="已归档的题目集合不能发布")
+    update_status, updated = await supabase_request(
+        request,
+        "PATCH",
+        "/rest/v1/question_sets",
+        service_role=True,
+        prefer_representation=True,
+        params={"id": f"eq.{question_set_id}"},
+        body={"status": "published"},
+    )
+    if update_status >= 400 or not updated:
+        raise HTTPException(status_code=422, detail="题目集合内容不完整，无法发布")
+    return updated[0]
 
 
 @app.get("/api/question-sets/{question_set_id}")
@@ -428,6 +512,435 @@ async def import_question_set(
         "question_count": len(questions),
         "source_filename": file.filename,
     }
+
+
+async def find_session_by_token(request: Request, access_token: str) -> dict[str, Any]:
+    status, sessions = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/sessions",
+        service_role=True,
+        params={
+            "access_token": f"eq.{access_token}",
+            "select": "id,created_by,question_set_id,class_id,session_type,access_token,status,current_question_id,current_question_status,starts_at,expires_at,closed_at",
+        },
+    )
+    if status >= 400 or not sessions:
+        raise HTTPException(status_code=404, detail="找不到课堂场次或二维码已失效")
+    session = sessions[0]
+    if session["expires_at"] <= utc_now().isoformat():
+        raise HTTPException(status_code=410, detail="二维码已过期")
+    return session
+
+
+async def session_questions(request: Request, question_set_id: str) -> list[dict[str, Any]]:
+    status, questions = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/questions",
+        service_role=True,
+        params={
+            "question_set_id": f"eq.{question_set_id}",
+            "select": "id,sort_order,question_text,question_image_url,explanation,question_type,content_type,language,correct_option_id",
+            "order": "sort_order.asc",
+        },
+    )
+    if status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取课堂题目")
+    return questions
+
+
+async def question_options(request: Request, question_id: str) -> list[dict[str, Any]]:
+    status, options = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/question_options",
+        service_role=True,
+        params={
+            "question_id": f"eq.{question_id}",
+            "select": "id,question_id,option_key,option_text,option_image_url,content_type",
+            "order": "option_key.asc",
+        },
+    )
+    if status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取题目选项")
+    return options
+
+
+def session_public_payload(session: dict[str, Any], question: dict[str, Any] | None, options: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "id": session["id"],
+        "session_type": session["session_type"],
+        "status": session["status"],
+        "current_question_status": session["current_question_status"],
+        "starts_at": session.get("starts_at"),
+        "expires_at": session.get("expires_at"),
+        "question": public_question(question, options) if question else None,
+    }
+
+
+@app.get("/api/classes")
+async def list_classes(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> list[dict[str, Any]]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    status, classes = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/classes",
+        access_token=token,
+        params={"select": "id,code,name,grade_id,grades(code,name)", "order": "grade_id.asc,code.asc"},
+    )
+    if status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取班级列表")
+    return classes
+
+
+@app.get("/api/sessions")
+async def list_sessions(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> list[dict[str, Any]]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    status, sessions = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/sessions",
+        access_token=token,
+        params={
+            "select": "id,question_set_id,class_id,session_type,access_token,status,current_question_id,current_question_status,starts_at,expires_at,created_at,classes(code,name),question_sets(name)",
+            "order": "created_at.desc",
+        },
+    )
+    if status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取课堂场次")
+    app_url = env_value(request, "PUBLIC_APP_URL", "http://localhost:5173").rstrip("/")
+    return [{**session, "join_url": f"{app_url}/student/session/{session['access_token']}"} for session in sessions]
+
+
+@app.post("/api/sessions")
+async def create_session(
+    payload: CreateSessionRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    teacher = await current_teacher_profile(request, token)
+    if payload.session_type != "classroom":
+        raise HTTPException(status_code=422, detail="当前只支持课堂答题场次")
+    set_status, sets = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/question_sets",
+        access_token=token,
+        params={"id": f"eq.{payload.question_set_id}", "select": "id,name,status"},
+    )
+    if set_status >= 400 or not sets:
+        raise HTTPException(status_code=404, detail="找不到题目集合")
+    if sets[0]["status"] != "published":
+        raise HTTPException(status_code=409, detail="请先发布题目集合，再创建课堂场次")
+    class_status, classes = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/classes",
+        access_token=token,
+        params={"id": f"eq.{payload.class_id}", "select": "id,name,code"},
+    )
+    if class_status >= 400 or not classes:
+        raise HTTPException(status_code=404, detail="找不到班级")
+    questions = await session_questions(request, payload.question_set_id)
+    if not questions:
+        raise HTTPException(status_code=409, detail="题目集合没有题目")
+    access_token = secrets.token_urlsafe(24)
+    status, result = await supabase_request(
+        request,
+        "POST",
+        "/rest/v1/sessions",
+        service_role=True,
+        prefer_representation=True,
+        body={
+            "created_by": teacher["user_id"],
+            "question_set_id": payload.question_set_id,
+            "class_id": payload.class_id,
+            "session_type": "classroom",
+            "access_token": access_token,
+            "status": "waiting",
+            "current_question_status": "pending",
+        },
+    )
+    if status >= 400 or not result:
+        raise HTTPException(status_code=502, detail="创建课堂场次失败")
+    app_url = env_value(request, "PUBLIC_APP_URL", "http://localhost:5173").rstrip("/")
+    return {**result[0], "join_url": f"{app_url}/student/session/{access_token}", "question_count": len(questions)}
+
+
+@app.post("/api/sessions/{session_id}/start")
+async def start_session(
+    session_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    status, sessions = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/sessions",
+        access_token=token,
+        params={"id": f"eq.{session_id}", "select": "id,question_set_id,status"},
+    )
+    if status >= 400 or not sessions:
+        raise HTTPException(status_code=404, detail="找不到课堂场次")
+    questions = await session_questions(request, sessions[0]["question_set_id"])
+    if not questions:
+        raise HTTPException(status_code=409, detail="课堂没有可用题目")
+    update_status, result = await supabase_request(
+        request,
+        "PATCH",
+        "/rest/v1/sessions",
+        service_role=True,
+        prefer_representation=True,
+        params={"id": f"eq.{session_id}"},
+        body={"status": "active", "current_question_id": questions[0]["id"], "current_question_status": "open", "starts_at": utc_now().isoformat()},
+    )
+    if update_status >= 400 or not result:
+        raise HTTPException(status_code=502, detail="开始课堂失败")
+    return result[0]
+
+
+@app.post("/api/sessions/{session_id}/lock")
+async def lock_session_question(
+    session_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    update_status, result = await supabase_request(
+        request,
+        "PATCH",
+        "/rest/v1/sessions",
+        service_role=True,
+        prefer_representation=True,
+        params={"id": f"eq.{session_id}"},
+        body={"current_question_status": "locked"},
+    )
+    if update_status >= 400 or not result:
+        raise HTTPException(status_code=502, detail="锁定题目失败")
+    return result[0]
+
+
+@app.post("/api/sessions/{session_id}/next")
+async def next_session_question(
+    session_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    status, sessions = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/sessions",
+        access_token=token,
+        params={"id": f"eq.{session_id}", "select": "id,question_set_id,current_question_id,status"},
+    )
+    if status >= 400 or not sessions:
+        raise HTTPException(status_code=404, detail="找不到课堂场次")
+    session = sessions[0]
+    questions = await session_questions(request, session["question_set_id"])
+    current_index = next((index for index, question in enumerate(questions) if question["id"] == session.get("current_question_id")), -1)
+    if current_index < 0 or current_index + 1 >= len(questions):
+        update_status, result = await supabase_request(
+            request,
+            "PATCH",
+            "/rest/v1/sessions",
+            service_role=True,
+            prefer_representation=True,
+            params={"id": f"eq.{session_id}"},
+            body={"status": "closed", "current_question_status": "locked", "closed_at": utc_now().isoformat()},
+        )
+    else:
+        update_status, result = await supabase_request(
+            request,
+            "PATCH",
+            "/rest/v1/sessions",
+            service_role=True,
+            prefer_representation=True,
+            params={"id": f"eq.{session_id}"},
+            body={"status": "active", "current_question_id": questions[current_index + 1]["id"], "current_question_status": "open"},
+        )
+    if update_status >= 400 or not result:
+        raise HTTPException(status_code=502, detail="切换题目失败")
+    return result[0]
+
+
+@app.get("/api/sessions/{session_id}/stats")
+async def session_stats(
+    session_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    status, sessions = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/sessions",
+        access_token=token,
+        params={"id": f"eq.{session_id}", "select": "id,current_question_id,status,current_question_status"},
+    )
+    if status >= 400 or not sessions:
+        raise HTTPException(status_code=404, detail="找不到课堂场次")
+    session = sessions[0]
+    participant_status, participants = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/session_participants",
+        access_token=token,
+        params={"session_id": f"eq.{session_id}", "select": "id"},
+    )
+    answers: list[dict[str, Any]] = []
+    answer_status = 200
+    if session.get("current_question_id"):
+        answer_status, answers = await supabase_request(
+            request,
+            "GET",
+            "/rest/v1/answers",
+            access_token=token,
+            params={"session_id": f"eq.{session_id}", "question_id": f"eq.{session['current_question_id']}", "practice_attempt_id": "is.null", "select": "selected_option_id"},
+        )
+    if participant_status >= 400 or answer_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取课堂统计")
+    distribution: dict[str, int] = {"A": 0, "B": 0, "C": 0, "D": 0}
+    if answers:
+        option_status, options = await supabase_request(
+            request,
+            "GET",
+            "/rest/v1/question_options",
+            access_token=token,
+            params={"id": f"in.({','.join(answer['selected_option_id'] for answer in answers)})", "select": "id,option_key"},
+        )
+        if option_status >= 400:
+            raise HTTPException(status_code=502, detail="无法读取选项统计")
+        option_keys = {option["id"]: option["option_key"] for option in options}
+        for answer in answers:
+            key = option_keys.get(answer["selected_option_id"])
+            if key in distribution:
+                distribution[key] += 1
+    return {"session_id": session_id, "status": session["status"], "current_question_status": session["current_question_status"], "current_question_id": session.get("current_question_id"), "participant_count": len(participants), "submitted_count": len(answers), "distribution": distribution}
+
+
+@app.get("/api/public/sessions/{access_token}")
+async def public_session(access_token: str, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    question = None
+    options: list[dict[str, Any]] = []
+    if session["status"] == "active" and session["current_question_status"] == "open" and session.get("current_question_id"):
+        questions = await session_questions(request, session["question_set_id"])
+        question = next((item for item in questions if item["id"] == session["current_question_id"]), None)
+        if question:
+            options = await question_options(request, question["id"])
+    return session_public_payload(session, question, options)
+
+
+@app.post("/api/public/sessions/{access_token}/join")
+async def join_public_session(access_token: str, payload: JoinRequest, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    device_hash = browser_key_hash(payload.browser_key)
+    device_status, devices = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/anonymous_devices",
+        service_role=True,
+        params={"browser_key_hash": f"eq.{device_hash}", "select": "id"},
+    )
+    if device_status >= 400:
+        raise HTTPException(status_code=502, detail="无法建立匿名设备")
+    if devices:
+        device_id = devices[0]["id"]
+    else:
+        create_status, created = await supabase_request(
+            request,
+            "POST",
+            "/rest/v1/anonymous_devices",
+            service_role=True,
+            prefer_representation=True,
+            body={"browser_key_hash": device_hash},
+        )
+        if create_status >= 400 or not created:
+            raise HTTPException(status_code=502, detail="无法建立匿名设备")
+        device_id = created[0]["id"]
+    participant_status, participants = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/session_participants",
+        service_role=True,
+        params={"session_id": f"eq.{session['id']}", "anonymous_device_id": f"eq.{device_id}", "select": "id"},
+    )
+    if participant_status >= 400:
+        raise HTTPException(status_code=502, detail="无法加入课堂")
+    if not participants:
+        join_status, _ = await supabase_request(
+            request,
+            "POST",
+            "/rest/v1/session_participants",
+            service_role=True,
+            prefer_representation=True,
+            body={"session_id": session["id"], "anonymous_device_id": device_id},
+        )
+        if join_status >= 400:
+            raise HTTPException(status_code=502, detail="无法加入课堂")
+    return {"joined": True, "session_id": session["id"], "status": session["status"]}
+
+
+@app.post("/api/public/sessions/{access_token}/answers")
+async def submit_public_answer(access_token: str, payload: AnswerRequest, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    device_hash = browser_key_hash(payload.browser_key)
+    device_status, devices = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/anonymous_devices",
+        service_role=True,
+        params={"browser_key_hash": f"eq.{device_hash}", "select": "id"},
+    )
+    if device_status >= 400 or not devices:
+        raise HTTPException(status_code=403, detail="请先加入课堂")
+    device_id = devices[0]["id"]
+    existing_status, existing = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/answers",
+        service_role=True,
+        params={"session_id": f"eq.{session['id']}", "question_id": f"eq.{payload.question_id}", "anonymous_device_id": f"eq.{device_id}", "practice_attempt_id": "is.null", "select": "id"},
+    )
+    if existing_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取已有答案")
+    answer_body = {"session_id": session["id"], "question_id": payload.question_id, "selected_option_id": payload.selected_option_id, "anonymous_device_id": device_id}
+    if existing:
+        write_method = "PATCH"
+        write_path = "/rest/v1/answers"
+        write_params = {"id": f"eq.{existing[0]['id']}"}
+    else:
+        write_method = "POST"
+        write_path = "/rest/v1/answers"
+        write_params = None
+    write_status, _ = await supabase_request(
+        request,
+        write_method,
+        write_path,
+        service_role=True,
+        prefer_representation=True,
+        params=write_params,
+        body=answer_body,
+    )
+    if write_status >= 400:
+        raise HTTPException(status_code=409, detail="当前题目不能提交答案，请确认课堂仍在进行")
+    return {"submitted": True, "question_id": payload.question_id}
 
 
 Default = asgi.entrypoint(app)

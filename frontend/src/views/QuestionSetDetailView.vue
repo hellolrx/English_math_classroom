@@ -1,12 +1,18 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { getQuestionSet } from '../api/client'
+import { getQuestionSet, publishQuestionSet } from '../api/client'
 
 const route = useRoute()
 const questionSet = ref(null)
 const loading = ref(true)
 const errorMessage = ref('')
+const publishing = ref(false)
+async function publish() {
+  publishing.value = true
+  errorMessage.value = ''
+  try { questionSet.value = await publishQuestionSet(route.params.id); questionSet.value = await getQuestionSet(route.params.id) } catch (error) { errorMessage.value = error.message } finally { publishing.value = false }
+}
 
 function formatDate(value) {
   if (!value) return '未提供日期'
@@ -50,6 +56,10 @@ onMounted(async () => {
           <p v-if="question.explanation" class="helper-text">解析：{{ question.explanation }}</p>
         </div>
       </article>
+      <div class="button-row session-actions">
+        <button v-if="questionSet.status === 'draft'" class="primary-button" :disabled="publishing" @click="publish">{{ publishing ? '发布中…' : '发布题目集合' }}</button>
+        <RouterLink v-if="questionSet.status === 'published'" class="primary-button inline-button" :to="`/teacher/sessions/new?questionSetId=${questionSet.id}`">建立课堂场次</RouterLink>
+      </div>
     </section>
   </main>
 </template>
