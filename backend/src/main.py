@@ -8,10 +8,11 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from typing import Any
 
-import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from js import Object, fetch
+from pyodide.ffi import to_js
 from workers import asgi
 
 from services.excel_parser import ExcelImportError, ParsedQuestion, parse_question_excel
@@ -135,32 +136,32 @@ async def supabase_request(
     last_error: Exception | None = None
     for attempt in range(2):
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
-                response = await client.request(
-                    method,
-                    f"{supabase_url(request)}{path}",
-                    headers=supabase_headers(
-                        request,
-                        access_token,
-                        service_role=service_role,
-                        prefer_representation=prefer_representation,
-                    ),
-                    json=body,
-                    params=params,
-                )
-            break
-        except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+            url = f"{supabase_url(request)}{path}"
+            if params:
+                from urllib.parse import urlencode
+                url = f"{url}?{urlencode(params)}"
+            request_headers = supabase_headers(
+                request,
+                access_token,
+                service_role=service_role,
+                prefer_representation=prefer_representation,
+            )
+            request_init: dict[str, Any] = {"method": method, "headers": request_headers}
+            if body is not None:
+                request_init["body"] = json.dumps(body)
+            response = await fetch(url, to_js(request_init, dict_converter=Object.fromEntries))
+            response_text = str(await response.text())
+            try:
+                payload = json.loads(response_text)
+            except json.JSONDecodeError:
+                payload = {"message": response_text[:300]}
+            return int(response.status), payload
+        except Exception as exc:
             last_error = exc
             if attempt == 1:
                 return 599, {"message": str(exc)[:300]}
             await asyncio.sleep(0.05)
-    else:
-        return 599, {"message": str(last_error)[:300] if last_error else "Supabase request failed"}
-    try:
-        payload = response.json()
-    except json.JSONDecodeError:
-        payload = {"message": response.text[:300]}
-    return response.status_code, payload
+    return 599, {"message": str(last_error)[:300] if last_error else "Supabase request failed"}
 
 
 def bearer_token(authorization: str | None) -> str:

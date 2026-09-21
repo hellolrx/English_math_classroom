@@ -5,7 +5,6 @@ description = "HHX English Math Classroom API"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
-    "httpx>=0.28.0",
     "openpyxl>=3.1.5",
     "python-multipart>=0.0.20",
 ]
