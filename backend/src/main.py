@@ -889,6 +889,7 @@ async def session_report(
             "sort_order": question["sort_order"],
             "question_text": question.get("question_text"),
             "correct_option_id": question.get("correct_option_id"),
+            "correct_option_key": options_by_id.get(question.get("correct_option_id"), {}).get("option_key"),
             "submitted_count": len(question_answers),
             "correct_count": correct_count,
             "accuracy": round(correct_count / len(question_answers) * 100, 1) if question_answers else 0,
