@@ -1,0 +1,12 @@
+{
+  "name": "hhx-backend",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "uv run pywrangler dev",
+    "deploy": "uv run pywrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
+  }
+}

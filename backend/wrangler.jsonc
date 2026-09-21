@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hhx-backend",
+  "main": "src/main.py",
+  "compatibility_date": "2026-09-20",
+  "compatibility_flags": ["python_workers"],
+  "vars": {
+    "SUPABASE_URL": "https://izbxkrxpihubsabijygr.supabase.co",
+    "TEACHER_LOGIN_EMAIL": "admin@hhx.local"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
