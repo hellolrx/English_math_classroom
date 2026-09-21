@@ -236,6 +236,7 @@ async def list_question_sets(
         access_token=token,
         params={
             "select": "id,name,source_filename,status,version,created_at,updated_at,archived_at,questions(count)",
+            "status": "neq.archived",
             "order": "created_at.desc",
         },
     )
@@ -246,6 +247,39 @@ async def list_question_sets(
         count_rows = question_set.pop("questions", [{"count": 0}])
         normalized_sets.append({**question_set, "question_count": (count_rows[0] or {}).get("count", 0)})
     return normalized_sets
+
+
+@app.post("/api/question-sets/{question_set_id}/archive")
+async def archive_question_set(
+    question_set_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    status, sets = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/question_sets",
+        access_token=token,
+        params={"id": f"eq.{question_set_id}", "select": "id,name,status"},
+    )
+    if status >= 400 or not sets:
+        raise HTTPException(status_code=404, detail="找不到題目集合")
+    if sets[0]["status"] == "archived":
+        return sets[0]
+    update_status, updated = await supabase_request(
+        request,
+        "PATCH",
+        "/rest/v1/question_sets",
+        service_role=True,
+        prefer_representation=True,
+        params={"id": f"eq.{question_set_id}"},
+        body={"status": "archived", "archived_at": utc_now().isoformat()},
+    )
+    if update_status >= 400 or not updated:
+        raise HTTPException(status_code=502, detail="題目集合归档失败")
+    return updated[0]
 
 
 @app.post("/api/question-sets/{question_set_id}/publish")

@@ -1,17 +1,27 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { getQuestionSet, publishQuestionSet } from '../api/client'
+import { getQuestionSet, publishQuestionSet, archiveQuestionSet } from '../api/client'
+import { useRouter } from 'vue-router'
 
 const route = useRoute()
+const router = useRouter()
 const questionSet = ref(null)
 const loading = ref(true)
 const errorMessage = ref('')
 const publishing = ref(false)
+const archiving = ref(false)
 async function publish() {
   publishing.value = true
   errorMessage.value = ''
   try { questionSet.value = await publishQuestionSet(route.params.id); questionSet.value = await getQuestionSet(route.params.id) } catch (error) { errorMessage.value = error.message } finally { publishing.value = false }
+}
+
+async function archive() {
+  if (!window.confirm('确定要归档这个题目集合吗？归档后不会删除数据，但不会再出现在默认列表中。')) return
+  archiving.value = true
+  errorMessage.value = ''
+  try { await archiveQuestionSet(route.params.id); router.replace('/teacher/question-sets') } catch (error) { errorMessage.value = error.message } finally { archiving.value = false }
 }
 
 function formatDate(value) {
@@ -58,7 +68,9 @@ onMounted(async () => {
       </article>
       <div class="button-row session-actions">
         <button v-if="questionSet.status === 'draft'" class="primary-button" :disabled="publishing" @click="publish">{{ publishing ? '发布中…' : '发布题目集合' }}</button>
-        <span v-else class="status-pill">已发布，可到老师工作台建立课堂</span>
+        <span v-else-if="questionSet.status === 'published'" class="status-pill">已发布，可到老师工作台建立课堂</span>
+        <span v-else class="status-pill">已归档</span>
+        <button v-if="questionSet.status !== 'archived'" class="secondary-button" :disabled="archiving" @click="archive">{{ archiving ? '归档中…' : '归档题目集合' }}</button>
       </div>
     </section>
   </main>

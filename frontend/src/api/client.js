@@ -56,6 +56,10 @@ export async function publishQuestionSet(id) {
   return apiRequest(`/api/question-sets/${id}/publish`, { method: 'POST' })
 }
 
+export async function archiveQuestionSet(id) {
+  return apiRequest(`/api/question-sets/${id}/archive`, { method: 'POST' })
+}
+
 export async function getClasses() {
   return apiRequest('/api/classes')
 }
