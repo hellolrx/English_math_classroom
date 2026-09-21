@@ -61,6 +61,7 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
 .coming-soon { margin-top: auto; color: #a1b2ad; font-size: 12px; font-weight: 800; }
 .loading-state { padding: 40px 0; color: #67807a; }
 .import-panel, .preview-panel, .list-panel { margin-bottom: 22px; padding: 28px; background: #fff; border: 1px solid #dcebe7; border-radius: 18px; }
+.import-next-step { margin-top: 12px; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
 .panel-heading h2 { margin-bottom: 0; font-size: 24px; }
 .import-grid { display: grid; grid-template-columns: 1fr 1.3fr; gap: 18px; }

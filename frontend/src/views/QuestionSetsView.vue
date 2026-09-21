@@ -11,6 +11,8 @@ const loading = ref(false)
 const loadingList = ref(true)
 const errorMessage = ref('')
 const successMessage = ref('')
+const importing = ref(false)
+const importedCount = ref(0)
 
 async function loadQuestionSets() {
   loadingList.value = true
@@ -23,11 +25,13 @@ async function loadQuestionSets() {
   }
 }
 
-function selectFile(event) {
+async function selectFile(event) {
   selectedFile.value = event.target.files?.[0] || null
   preview.value = null
   errorMessage.value = ''
   successMessage.value = ''
+  importedCount.value = 0
+  if (selectedFile.value) await previewFile()
 }
 
 async function previewFile() {
@@ -59,9 +63,11 @@ async function submitImport() {
     return
   }
   loading.value = true
+  importing.value = true
   try {
     const result = await importQuestionSet(setName.value.trim(), selectedFile.value)
     successMessage.value = `已匯入「${result.name}」，共 ${result.question_count} 題`
+    importedCount.value = result.question_count
     setName.value = ''
     selectedFile.value = null
     preview.value = null
@@ -71,6 +77,7 @@ async function submitImport() {
     errorMessage.value = formatError(error)
   } finally {
     loading.value = false
+    importing.value = false
   }
 }
 
@@ -93,7 +100,7 @@ onMounted(loadQuestionSets)
         <RouterLink class="back-link-inline" to="/teacher">← 返回工作台</RouterLink>
         <p class="eyebrow">QUESTION BANK</p>
         <h1>題目集合</h1>
-        <p class="muted">上傳 Excel 後先預覽，確認無誤再匯入題庫。</p>
+        <p class="muted">選擇 Excel 後會自動預覽，確認無誤再匯入題庫。</p>
       </div>
     </header>
 
@@ -116,11 +123,11 @@ onMounted(loadQuestionSets)
       </div>
       <p class="helper-text">必要欄位：題目、選項A、選項B、選項C、選項D、正確答案。解析欄位可以留空。</p>
       <div class="button-row">
-        <button class="secondary-button" type="button" :disabled="loading" @click="previewFile">{{ loading ? '處理中…' : '預覽文件' }}</button>
-        <button class="primary-button compact-button" type="button" :disabled="loading || !preview" @click="submitImport">確認匯入</button>
+        <button class="primary-button compact-button" type="button" :disabled="loading || !preview" @click="submitImport">{{ importing ? '正在匯入中…' : '確認匯入' }}</button>
       </div>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
       <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
+      <p v-if="importedCount" class="helper-text import-next-step">已匯入 {{ importedCount }} 題。接下來可前往 <RouterLink to="/teacher/sessions/new">課堂場次</RouterLink> 建立课堂回答。</p>
     </section>
 
     <section v-if="preview" class="preview-panel">
