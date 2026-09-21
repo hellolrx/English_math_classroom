@@ -646,7 +646,8 @@ async def list_sessions(
         "/rest/v1/sessions",
         access_token=token,
         params={
-            "select": "id,question_set_id,class_id,session_type,access_token,status,current_question_id,current_question_status,starts_at,expires_at,created_at,classes(code,name),question_sets(name)",
+            "status": "neq.archived",
+            "select": "id,question_set_id,class_id,session_type,access_token,status,current_question_id,current_question_status,starts_at,expires_at,closed_at,archived_at,created_at,classes(code,name),question_sets(name)",
             "order": "created_at.desc",
         },
     )
@@ -654,6 +655,39 @@ async def list_sessions(
         raise HTTPException(status_code=502, detail="无法读取课堂场次")
     app_url = env_value(request, "PUBLIC_APP_URL", "http://localhost:5173").rstrip("/")
     return [{**session, "join_url": f"{app_url}/student/session/{session['access_token']}"} for session in sessions]
+
+
+@app.post("/api/sessions/{session_id}/archive")
+async def archive_session(
+    session_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    status, sessions = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/sessions",
+        access_token=token,
+        params={"id": f"eq.{session_id}", "select": "id,status"},
+    )
+    if status >= 400 or not sessions:
+        raise HTTPException(status_code=404, detail="找不到课堂场次")
+    if sessions[0]["status"] != "closed":
+        raise HTTPException(status_code=409, detail="只有已结束的课堂可以归档")
+    update_status, updated = await supabase_request(
+        request,
+        "PATCH",
+        "/rest/v1/sessions",
+        service_role=True,
+        prefer_representation=True,
+        params={"id": f"eq.{session_id}"},
+        body={"status": "archived", "archived_at": utc_now().isoformat()},
+    )
+    if update_status >= 400 or not updated:
+        raise HTTPException(status_code=502, detail="课堂归档失败")
+    return updated[0]
 
 
 @app.post("/api/sessions")

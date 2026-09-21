@@ -92,6 +92,10 @@ export async function getSessionReport(id) {
   return apiRequest(`/api/sessions/${id}/report`)
 }
 
+export async function archiveSession(id) {
+  return apiRequest(`/api/sessions/${id}/archive`, { method: 'POST' })
+}
+
 export async function getPublicSession(token) {
   return apiRequest(`/api/public/sessions/${encodeURIComponent(token)}`)
 }
