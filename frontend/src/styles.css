@@ -102,6 +102,18 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
 .student-options button { padding: 16px; border: 1px solid #cbded8; border-radius: 12px; color: #35615a; background: #fff; text-align: left; font-weight: 700; }
 .student-options button.selected { border-color: #0f766e; color: #fff; background: #0f766e; }
 .session-actions { justify-content: flex-start; }
+.session-create-panel { gap: 28px; }
+.selection-block { padding-bottom: 24px; border-bottom: 1px solid #e1eeea; }
+.selection-block h2 { margin-bottom: 14px; font-size: 21px; }
+.choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.grade-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.choice-card, .choice-row { border: 1px solid #cbded8; border-radius: 12px; color: #35615a; background: #fff; font-weight: 800; }
+.choice-card { min-height: 54px; padding: 12px; }
+.choice-card:hover, .choice-card.active, .choice-row:hover, .choice-row.active { border-color: #0f766e; color: #fff; background: #0f766e; }
+.choice-list { display: grid; gap: 10px; }
+.choice-row { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px 16px; text-align: left; }
+.choice-row small { opacity: .72; font-weight: 600; }
+.choice-row.active small { color: #d7f3ee; }
 
 @media (max-width: 760px) {
   .auth-card { padding: 30px 24px; }
@@ -111,4 +123,5 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
   .import-grid { grid-template-columns: 1fr; }
   .panel-heading { align-items: flex-start; flex-direction: column; }
   .option-preview-grid { grid-template-columns: 1fr; }
+  .choice-grid, .grade-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

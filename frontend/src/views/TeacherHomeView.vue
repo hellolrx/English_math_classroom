@@ -54,11 +54,11 @@ function logout() {
           <h3>題目管理</h3>
           <p>上傳 Excel、預覽題目並建立題目集合。</p>
         </RouterLink>
-        <article class="feature-card">
+        <RouterLink class="feature-card feature-card-link" to="/teacher/sessions/new">
           <span class="feature-icon">課</span>
           <h3>課堂場次</h3>
           <p>建立班級答題場次，產生學生掃描用 QR Code。</p>
-        </article>
+        </RouterLink>
         <article class="feature-card">
           <span class="feature-icon">統</span>
           <h3>即時統計</h3>

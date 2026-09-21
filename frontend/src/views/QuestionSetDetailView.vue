@@ -58,7 +58,7 @@ onMounted(async () => {
       </article>
       <div class="button-row session-actions">
         <button v-if="questionSet.status === 'draft'" class="primary-button" :disabled="publishing" @click="publish">{{ publishing ? '发布中…' : '发布题目集合' }}</button>
-        <RouterLink v-if="questionSet.status === 'published'" class="primary-button inline-button" :to="`/teacher/sessions/new?questionSetId=${questionSet.id}`">建立课堂场次</RouterLink>
+        <span v-else class="status-pill">已发布，可到老师工作台建立课堂</span>
       </div>
     </section>
   </main>
