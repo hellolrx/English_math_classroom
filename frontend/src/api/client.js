@@ -84,6 +84,10 @@ export async function getSessionStats(id) {
   return apiRequest(`/api/sessions/${id}/stats`)
 }
 
+export async function getSessionReport(id) {
+  return apiRequest(`/api/sessions/${id}/report`)
+}
+
 export async function getPublicSession(token) {
   return apiRequest(`/api/public/sessions/${encodeURIComponent(token)}`)
 }

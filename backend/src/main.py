@@ -835,6 +835,77 @@ async def session_stats(
     return {"session_id": session_id, "status": session["status"], "current_question_status": session["current_question_status"], "current_question_id": session.get("current_question_id"), "participant_count": len(participants), "submitted_count": len(answers), "distribution": distribution}
 
 
+@app.get("/api/sessions/{session_id}/report")
+async def session_report(
+    session_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    await current_teacher_profile(request, token)
+    session_status, sessions = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/sessions",
+        access_token=token,
+        params={"id": f"eq.{session_id}", "select": "id,status,created_at,closed_at,question_set_id,class_id,classes(code,name),question_sets(name)"},
+    )
+    if session_status >= 400 or not sessions:
+        raise HTTPException(status_code=404, detail="找不到课堂场次")
+    session = sessions[0]
+    questions = await session_questions(request, session["question_set_id"])
+    question_ids = [question["id"] for question in questions]
+    answers: list[dict[str, Any]] = []
+    options: list[dict[str, Any]] = []
+    if question_ids:
+        answer_status, answers = await supabase_request(
+            request,
+            "GET",
+            "/rest/v1/answers",
+            service_role=True,
+            params={"session_id": f"eq.{session_id}", "question_id": f"in.({','.join(question_ids)})", "practice_attempt_id": "is.null", "select": "question_id,selected_option_id,is_correct"},
+        )
+        option_status, options = await supabase_request(
+            request,
+            "GET",
+            "/rest/v1/question_options",
+            service_role=True,
+            params={"question_id": f"in.({','.join(question_ids)})", "select": "id,question_id,option_key"},
+        )
+        if answer_status >= 400 or option_status >= 400:
+            raise HTTPException(status_code=502, detail="无法读取课堂统计")
+    options_by_id = {option["id"]: option for option in options}
+    report_questions: list[dict[str, Any]] = []
+    for question in questions:
+        question_answers = [answer for answer in answers if answer["question_id"] == question["id"]]
+        distribution = {"A": 0, "B": 0, "C": 0, "D": 0}
+        for answer in question_answers:
+            key = options_by_id.get(answer["selected_option_id"], {}).get("option_key")
+            if key in distribution:
+                distribution[key] += 1
+        correct_count = sum(1 for answer in question_answers if answer.get("is_correct") is True)
+        report_questions.append({
+            "id": question["id"],
+            "sort_order": question["sort_order"],
+            "question_text": question.get("question_text"),
+            "correct_option_id": question.get("correct_option_id"),
+            "submitted_count": len(question_answers),
+            "correct_count": correct_count,
+            "accuracy": round(correct_count / len(question_answers) * 100, 1) if question_answers else 0,
+            "distribution": distribution,
+        })
+    participant_status, participants = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/session_participants",
+        service_role=True,
+        params={"session_id": f"eq.{session_id}", "select": "id"},
+    )
+    if participant_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取课堂人数")
+    return {"session": session, "participant_count": len(participants), "total_submitted_count": len(answers), "questions": report_questions}
+
+
 @app.get("/api/public/sessions/{access_token}")
 async def public_session(access_token: str, request: Request) -> dict[str, Any]:
     session = await find_session_by_token(request, access_token)
