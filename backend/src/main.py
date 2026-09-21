@@ -989,7 +989,7 @@ async def public_session(access_token: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail="无法读取课堂人数")
     question = None
     options: list[dict[str, Any]] = []
-    if session["status"] == "active" and session["current_question_status"] == "open" and session.get("current_question_id"):
+    if session["status"] == "active" and session.get("current_question_id"):
         questions = await session_questions(request, session["question_set_id"])
         question = next((item for item in questions if item["id"] == session["current_question_id"]), None)
         if question:
