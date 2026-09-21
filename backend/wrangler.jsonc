@@ -6,7 +6,8 @@
   "compatibility_flags": ["python_workers"],
   "vars": {
     "SUPABASE_URL": "https://izbxkrxpihubsabijygr.supabase.co",
-    "TEACHER_LOGIN_EMAIL": "admin@hhx.local"
+    "TEACHER_LOGIN_EMAIL": "admin@hhx.local",
+    "PUBLIC_APP_URL": "https://english-math-classroom.pages.dev"
   },
   "observability": {
     "enabled": true
