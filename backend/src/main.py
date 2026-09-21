@@ -131,19 +131,29 @@ async def supabase_request(
     service_role: bool = False,
     prefer_representation: bool = False,
 ) -> tuple[int, Any]:
-    with httpx.Client(timeout=12.0) as client:
-        response = client.request(
-            method,
-            f"{supabase_url(request)}{path}",
-            headers=supabase_headers(
-                request,
-                access_token,
-                service_role=service_role,
-                prefer_representation=prefer_representation,
-            ),
-            json=body,
-            params=params,
-        )
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            with httpx.Client(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
+                response = client.request(
+                    method,
+                    f"{supabase_url(request)}{path}",
+                    headers=supabase_headers(
+                        request,
+                        access_token,
+                        service_role=service_role,
+                        prefer_representation=prefer_representation,
+                    ),
+                    json=body,
+                    params=params,
+                )
+            break
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+            last_error = exc
+            if attempt == 1:
+                return 599, {"message": str(exc)[:300]}
+    else:
+        return 599, {"message": str(last_error)[:300] if last_error else "Supabase request failed"}
     try:
         payload = response.json()
     except json.JSONDecodeError:

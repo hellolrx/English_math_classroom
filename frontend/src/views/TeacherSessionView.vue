@@ -2,8 +2,8 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { getSessions, getPublicSession, getSessionStats, lockSession, nextSession } from '../api/client'
-const route = useRoute(); const session = ref(null); const publicState = ref(null); const stats = ref(null); const errorMessage = ref(''); let timer
-async function load() { try { const sessions = await getSessions(); session.value = sessions.find(x => x.id === route.params.id); if (session.value) { publicState.value = await getPublicSession(session.value.access_token); stats.value = await getSessionStats(session.value.id) } } catch (e) { errorMessage.value = e.message } }
+const route = useRoute(); const session = ref(null); const publicState = ref(null); const stats = ref(null); const errorMessage = ref(''); let timer; let loading = false
+async function load() { if (loading) return; loading = true; try { const sessions = await getSessions(); session.value = sessions.find(x => x.id === route.params.id); if (session.value) { publicState.value = await getPublicSession(session.value.access_token); stats.value = await getSessionStats(session.value.id) } errorMessage.value = '' } catch (e) { if (!session.value) errorMessage.value = e.message } finally { loading = false } }
 async function action(fn) { try { await fn(route.params.id); await load() } catch (e) { errorMessage.value = e.message } }
 onMounted(async () => { await load(); timer = setInterval(load, 2500) }); onUnmounted(() => clearInterval(timer))
 </script>

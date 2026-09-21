@@ -12,12 +12,22 @@ export async function apiRequest(path, options = {}) {
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, { ...options, headers })
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    throw new Error(payload.detail || payload.message || '請求失敗，請稍後再試')
+  const canRetry = (options.method || 'GET').toUpperCase() === 'GET'
+  let lastError
+  for (let attempt = 0; attempt < (canRetry ? 3 : 1); attempt += 1) {
+    try {
+      const response = await fetch(`${apiBaseUrl}${path}`, { ...options, headers })
+      const payload = await response.json().catch(() => ({}))
+      if (response.ok) return payload
+      lastError = new Error(payload.detail || payload.message || '請求失敗，請稍後再試')
+      if (!canRetry || response.status < 500 || attempt === 2) throw lastError
+    } catch (error) {
+      lastError = error
+      if (!canRetry || attempt === 2) throw error
+    }
+    await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)))
   }
-  return payload
+  throw lastError || new Error('請求失敗，請稍後再試')
 }
 
 export async function login(username, password) {

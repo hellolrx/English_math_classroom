@@ -72,6 +72,7 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
 .secondary-button:disabled, .compact-button:disabled { cursor: not-allowed; opacity: .55; }
 .compact-button { padding: 13px 18px; }
 .success-message { margin: 16px 0 0; padding: 10px 12px; color: #146c4c; background: #eaf8f1; border-radius: 9px; font-size: 14px; }
+.pending-message { margin: 16px 0 0; padding: 10px 12px; color: #8a6410; background: #fff7d6; border-radius: 9px; font-size: 14px; }
 .question-preview-list { display: grid; gap: 12px; }
 .question-preview-card { display: flex; gap: 14px; padding: 16px; border: 1px solid #e1eeea; border-radius: 13px; }
 .question-number { flex: 0 0 32px; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; color: #0f766e; background: #e5f4f0; font-weight: 900; }
