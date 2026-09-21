@@ -89,6 +89,8 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
 .set-row p { margin: 0; color: #78908b; font-size: 13px; }
 .session-created { margin-top: 24px; padding-top: 24px; border-top: 1px solid #e1eeea; text-align: center; }
 .qr-code { display: block; width: min(300px, 100%); margin: 0 auto 14px; border-radius: 12px; }
+.participant-count { margin: 16px 0; padding: 14px; border-radius: 11px; color: #145b4d; background: #eaf8f1; font-size: 16px; }
+.participant-count strong { margin: 0 4px; font-size: 25px; }
 .inline-button { display: inline-block; margin-top: 14px; }
 .session-status { display: flex; justify-content: space-between; gap: 12px; align-items: center; color: #67807a; }
 .live-question { margin: 24px 0; padding: 22px; border: 1px solid #dcebe7; border-radius: 14px; }

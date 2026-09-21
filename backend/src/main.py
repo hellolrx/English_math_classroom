@@ -567,7 +567,7 @@ async def question_options(request: Request, question_id: str) -> list[dict[str,
     return options
 
 
-def session_public_payload(session: dict[str, Any], question: dict[str, Any] | None, options: list[dict[str, Any]]) -> dict[str, Any]:
+def session_public_payload(session: dict[str, Any], question: dict[str, Any] | None, options: list[dict[str, Any]], participant_count: int = 0) -> dict[str, Any]:
     return {
         "id": session["id"],
         "session_type": session["session_type"],
@@ -575,6 +575,7 @@ def session_public_payload(session: dict[str, Any], question: dict[str, Any] | N
         "current_question_status": session["current_question_status"],
         "starts_at": session.get("starts_at"),
         "expires_at": session.get("expires_at"),
+        "participant_count": participant_count,
         "question": public_question(question, options) if question else None,
     }
 
@@ -837,6 +838,15 @@ async def session_stats(
 @app.get("/api/public/sessions/{access_token}")
 async def public_session(access_token: str, request: Request) -> dict[str, Any]:
     session = await find_session_by_token(request, access_token)
+    participant_status, participants = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/session_participants",
+        service_role=True,
+        params={"session_id": f"eq.{session['id']}", "select": "id"},
+    )
+    if participant_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取课堂人数")
     question = None
     options: list[dict[str, Any]] = []
     if session["status"] == "active" and session["current_question_status"] == "open" and session.get("current_question_id"):
@@ -844,7 +854,7 @@ async def public_session(access_token: str, request: Request) -> dict[str, Any]:
         question = next((item for item in questions if item["id"] == session["current_question_id"]), None)
         if question:
             options = await question_options(request, question["id"])
-    return session_public_payload(session, question, options)
+    return session_public_payload(session, question, options, len(participants))
 
 
 @app.post("/api/public/sessions/{access_token}/join")
@@ -894,7 +904,14 @@ async def join_public_session(access_token: str, payload: JoinRequest, request: 
         )
         if join_status >= 400:
             raise HTTPException(status_code=502, detail="无法加入课堂")
-    return {"joined": True, "session_id": session["id"], "status": session["status"]}
+    count_status, count_rows = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/session_participants",
+        service_role=True,
+        params={"session_id": f"eq.{session['id']}", "select": "id"},
+    )
+    return {"joined": True, "session_id": session["id"], "status": session["status"], "participant_count": len(count_rows) if count_status < 400 else 0}
 
 
 @app.post("/api/public/sessions/{access_token}/answers")
