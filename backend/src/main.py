@@ -52,6 +52,22 @@ class JoinRequest(BaseModel):
     browser_key: str = Field(min_length=16, max_length=200)
 
 
+class PracticeStartRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+
+
+class PracticeAnswerRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+    attempt_id: str = Field(min_length=1)
+    question_id: str = Field(min_length=1)
+    selected_option_id: str = Field(min_length=1)
+
+
+class PracticeCompleteRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+    attempt_id: str = Field(min_length=1)
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -580,6 +596,55 @@ async def find_session_by_token(request: Request, access_token: str) -> dict[str
     return session
 
 
+async def ensure_anonymous_device(request: Request, browser_key: str) -> str:
+    device_hash = browser_key_hash(browser_key)
+    device_status, devices = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/anonymous_devices",
+        service_role=True,
+        params={"browser_key_hash": f"eq.{device_hash}", "select": "id"},
+    )
+    if device_status >= 400:
+        raise HTTPException(status_code=502, detail="无法建立匿名设备")
+    if devices:
+        return devices[0]["id"]
+    create_status, created = await supabase_request(
+        request,
+        "POST",
+        "/rest/v1/anonymous_devices",
+        service_role=True,
+        prefer_representation=True,
+        body={"browser_key_hash": device_hash},
+    )
+    if create_status >= 400 or not created:
+        raise HTTPException(status_code=502, detail="无法建立匿名设备")
+    return created[0]["id"]
+
+
+async def join_anonymous_session(request: Request, session_id: str, device_id: str) -> None:
+    participant_status, participants = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/session_participants",
+        service_role=True,
+        params={"session_id": f"eq.{session_id}", "anonymous_device_id": f"eq.{device_id}", "select": "id"},
+    )
+    if participant_status >= 400:
+        raise HTTPException(status_code=502, detail="无法加入练习")
+    if not participants:
+        join_status, _ = await supabase_request(
+            request,
+            "POST",
+            "/rest/v1/session_participants",
+            service_role=True,
+            prefer_representation=True,
+            body={"session_id": session_id, "anonymous_device_id": device_id},
+        )
+        if join_status >= 400:
+            raise HTTPException(status_code=502, detail="无法加入练习")
+
+
 async def session_questions(request: Request, question_set_id: str) -> list[dict[str, Any]]:
     status, questions = await supabase_request(
         request,
@@ -711,8 +776,8 @@ async def create_session(
 ) -> dict[str, Any]:
     token = bearer_token(authorization)
     teacher = await current_teacher_profile(request, token)
-    if payload.session_type != "classroom":
-        raise HTTPException(status_code=422, detail="当前只支持课堂答题场次")
+    if payload.session_type not in {"classroom", "homework"}:
+        raise HTTPException(status_code=422, detail="不支持的场次类型")
     set_status, sets = await supabase_request(
         request,
         "GET",
@@ -747,16 +812,22 @@ async def create_session(
             "created_by": teacher["user_id"],
             "question_set_id": payload.question_set_id,
             "class_id": payload.class_id,
-            "session_type": "classroom",
+            "session_type": payload.session_type,
             "access_token": access_token,
-            "status": "waiting",
+            "status": "waiting" if payload.session_type == "classroom" else "active",
             "current_question_status": "pending",
+            "starts_at": utc_now().isoformat() if payload.session_type == "homework" else None,
         },
     )
     if status >= 400 or not result:
         raise HTTPException(status_code=502, detail="创建课堂场次失败")
     app_url = env_value(request, "PUBLIC_APP_URL", "http://localhost:5173").rstrip("/")
-    return {**result[0], "join_url": f"{app_url}/student/session/{access_token}", "question_count": len(questions)}
+    return {
+        **result[0],
+        "join_url": f"{app_url}/student/session/{access_token}",
+        "question_count": len(questions),
+        "practice_code": access_token if payload.session_type == "homework" else None,
+    }
 
 
 @app.post("/api/sessions/{session_id}/start")
@@ -1002,6 +1073,126 @@ async def session_report(
     if participant_status >= 400:
         raise HTTPException(status_code=502, detail="无法读取课堂人数")
     return {"session": session, "participant_count": len(participants), "total_submitted_count": len(answers), "questions": report_questions}
+
+
+@app.get("/api/public/practice/{access_token}")
+async def public_practice(access_token: str, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    if session["session_type"] != "homework":
+        raise HTTPException(status_code=422, detail="这不是课后练习码")
+    if session["status"] != "active":
+        raise HTTPException(status_code=410, detail="练习已结束")
+    questions = await session_questions(request, session["question_set_id"])
+    payload_questions = []
+    for question in questions:
+        payload_questions.append(public_question(question, await question_options(request, question["id"])))
+    return {
+        "id": session["id"],
+        "session_type": "homework",
+        "status": session["status"],
+        "expires_at": session.get("expires_at"),
+        "question_count": len(payload_questions),
+        "questions": payload_questions,
+    }
+
+
+@app.post("/api/public/practice/{access_token}/start")
+async def start_public_practice(access_token: str, payload: PracticeStartRequest, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    if session["session_type"] != "homework" or session["status"] != "active":
+        raise HTTPException(status_code=410, detail="练习已结束")
+    device_id = await ensure_anonymous_device(request, payload.browser_key)
+    await join_anonymous_session(request, session["id"], device_id)
+
+    draft_status, drafts = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/practice_attempts",
+        service_role=True,
+        params={"session_id": f"eq.{session['id']}", "anonymous_device_id": f"eq.{device_id}", "status": "eq.draft", "select": "id"},
+    )
+    if draft_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取未完成练习")
+    # 首版不支持续做，开始新练习时清理同一设备留下的未完成轮次。
+    for draft in drafts:
+        await supabase_request(
+            request,
+            "DELETE",
+            "/rest/v1/answers",
+            service_role=True,
+            params={"practice_attempt_id": f"eq.{draft['id']}"},
+        )
+        await supabase_request(
+            request,
+            "DELETE",
+            "/rest/v1/practice_attempts",
+            service_role=True,
+            params={"id": f"eq.{draft['id']}"},
+        )
+    create_status, attempts = await supabase_request(
+        request,
+        "POST",
+        "/rest/v1/practice_attempts",
+        service_role=True,
+        prefer_representation=True,
+        body={"session_id": session["id"], "anonymous_device_id": device_id, "status": "draft"},
+    )
+    if create_status >= 400 or not attempts:
+        raise HTTPException(status_code=502, detail="无法开始练习")
+    return {"attempt_id": attempts[0]["id"], "session_id": session["id"]}
+
+
+@app.post("/api/public/practice/{access_token}/answers")
+async def submit_practice_answer(access_token: str, payload: PracticeAnswerRequest, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    if session["session_type"] != "homework" or session["status"] != "active":
+        raise HTTPException(status_code=410, detail="练习已结束")
+    device_id = await ensure_anonymous_device(request, payload.browser_key)
+    attempt_status, attempts = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/practice_attempts",
+        service_role=True,
+        params={"id": f"eq.{payload.attempt_id}", "session_id": f"eq.{session['id']}", "anonymous_device_id": f"eq.{device_id}", "status": "eq.draft", "select": "id"},
+    )
+    if attempt_status >= 400 or not attempts:
+        raise HTTPException(status_code=409, detail="练习轮次已失效，请重新输入练习码")
+    existing_status, existing = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/answers",
+        service_role=True,
+        params={"practice_attempt_id": f"eq.{payload.attempt_id}", "question_id": f"eq.{payload.question_id}", "select": "id"},
+    )
+    if existing_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取已有答案")
+    body = {"session_id": session["id"], "question_id": payload.question_id, "selected_option_id": payload.selected_option_id, "practice_attempt_id": payload.attempt_id}
+    if existing:
+        write_status, _ = await supabase_request(request, "PATCH", "/rest/v1/answers", service_role=True, prefer_representation=True, params={"id": f"eq.{existing[0]['id']}"}, body={"selected_option_id": payload.selected_option_id})
+    else:
+        write_status, _ = await supabase_request(request, "POST", "/rest/v1/answers", service_role=True, prefer_representation=True, body=body)
+    if write_status >= 400:
+        raise HTTPException(status_code=409, detail="答案提交失败，请重新尝试")
+    return {"submitted": True, "question_id": payload.question_id}
+
+
+@app.post("/api/public/practice/{access_token}/complete")
+async def complete_public_practice(access_token: str, payload: PracticeCompleteRequest, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    if session["session_type"] != "homework" or session["status"] != "active":
+        raise HTTPException(status_code=410, detail="练习已结束")
+    device_id = await ensure_anonymous_device(request, payload.browser_key)
+    attempt_status, attempts = await supabase_request(request, "GET", "/rest/v1/practice_attempts", service_role=True, params={"id": f"eq.{payload.attempt_id}", "session_id": f"eq.{session['id']}", "anonymous_device_id": f"eq.{device_id}", "status": "eq.draft", "select": "id"})
+    if attempt_status >= 400 or not attempts:
+        raise HTTPException(status_code=409, detail="练习轮次已失效，请重新输入练习码")
+    update_status, updated = await supabase_request(request, "PATCH", "/rest/v1/practice_attempts", service_role=True, prefer_representation=True, params={"id": f"eq.{payload.attempt_id}"}, body={"status": "completed", "completed_at": utc_now().isoformat()})
+    if update_status >= 400 or not updated:
+        message = updated.get("message", "练习尚未完成，请完成全部题目") if isinstance(updated, dict) else "练习尚未完成，请完成全部题目"
+        raise HTTPException(status_code=409, detail=message)
+    answer_status, answers = await supabase_request(request, "GET", "/rest/v1/answers", service_role=True, params={"practice_attempt_id": f"eq.{payload.attempt_id}", "select": "question_id,selected_option_id,is_correct"})
+    if answer_status >= 400:
+        raise HTTPException(status_code=502, detail="练习已完成，但结果读取失败")
+    return {"completed": True, "attempt_id": payload.attempt_id, "answers": answers}
 
 
 @app.get("/api/public/sessions/{access_token}")

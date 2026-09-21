@@ -56,8 +56,8 @@ function logout() {
         </RouterLink>
         <RouterLink class="feature-card feature-card-link" to="/teacher/sessions/new">
           <span class="feature-icon">課</span>
-          <h3>課堂場次</h3>
-          <p>建立班級答題場次，產生學生掃描用 QR Code。</p>
+          <h3>課堂／課後</h3>
+          <p>建立課堂 QR Code 或課後練習碼。</p>
         </RouterLink>
         <RouterLink class="feature-card feature-card-link" to="/teacher/reports">
           <span class="feature-icon">統</span>

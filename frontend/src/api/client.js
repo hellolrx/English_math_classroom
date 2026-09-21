@@ -123,3 +123,28 @@ export async function submitPublicAnswer(token, payload) {
     body: JSON.stringify(payload),
   })
 }
+
+export async function getPublicPractice(code) {
+  return apiRequest(`/api/public/practice/${encodeURIComponent(code)}`)
+}
+
+export async function startPublicPractice(code, browserKey) {
+  return apiRequest(`/api/public/practice/${encodeURIComponent(code)}/start`, {
+    method: 'POST',
+    body: JSON.stringify({ browser_key: browserKey }),
+  })
+}
+
+export async function submitPracticeAnswer(code, payload) {
+  return apiRequest(`/api/public/practice/${encodeURIComponent(code)}/answers`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function completePublicPractice(code, payload) {
+  return apiRequest(`/api/public/practice/${encodeURIComponent(code)}/complete`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}

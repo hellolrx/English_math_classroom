@@ -10,6 +10,7 @@ import QuestionSetDetailView from './views/QuestionSetDetailView.vue'
 import SessionCreateView from './views/SessionCreateView.vue'
 import TeacherSessionView from './views/TeacherSessionView.vue'
 import StudentSessionView from './views/StudentSessionView.vue'
+import StudentPracticeView from './views/StudentPracticeView.vue'
 import ReportsView from './views/ReportsView.vue'
 
 const router = createRouter({
@@ -25,6 +26,7 @@ const router = createRouter({
     { path: '/teacher/reports', component: ReportsView, meta: { requiresTeacher: true } },
     { path: '/student/join', component: StudentJoinView },
     { path: '/student/session/:token', component: StudentSessionView },
+    { path: '/student/practice/:code', component: StudentPracticeView },
   ],
 })
 

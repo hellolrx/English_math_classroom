@@ -54,7 +54,7 @@ async function submit() {
 
       <div class="auth-footer">
         <span>學生？</span>
-        <RouterLink to="/student/join">掃描課堂 QR Code</RouterLink>
+        <RouterLink to="/student/join">學生入口（課堂／練習碼）</RouterLink>
       </div>
     </section>
   </main>

@@ -139,6 +139,17 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
 .student-options { display: grid; gap: 12px; }
 .student-options button { padding: 16px; border: 1px solid #cbded8; border-radius: 12px; color: #35615a; background: #fff; text-align: left; font-weight: 700; }
 .student-options button.selected { border-color: #0f766e; color: #fff; background: #0f766e; }
+.student-options button:disabled { cursor: wait; opacity: .72; }
+.practice-progress { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; color: #67807a; font-size: 13px; font-weight: 700; }
+.practice-next-button { width: 100%; margin-top: 18px; }
+.practice-code-box { display: grid; gap: 7px; margin-top: 18px; padding: 18px; border-radius: 13px; color: #145b4d; background: #eaf8f1; text-align: center; }
+.practice-code-box span { font-size: 13px; }
+.practice-code-box strong { font-size: 25px; letter-spacing: .08em; overflow-wrap: anywhere; }
+.practice-result-list { display: grid; gap: 9px; margin-top: 18px; }
+.practice-result-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 10px; background: #f7fbfa; }
+.result-correct { color: #16834f; }
+.result-wrong { color: #c34a45; }
+.practice-back-button { width: 100%; margin-top: 20px; }
 .session-actions { justify-content: flex-start; }
 .session-create-panel { gap: 28px; }
 .selection-block { padding-bottom: 24px; border-bottom: 1px solid #e1eeea; }
