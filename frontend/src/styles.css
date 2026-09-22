@@ -36,6 +36,8 @@ input:focus { border-color: #0f766e; box-shadow: 0 0 0 4px rgba(15, 118, 110, .1
 .primary-button { border: 0; border-radius: 11px; padding: 14px 18px; color: #fff; background: #0f766e; font-weight: 800; transition: transform .15s, background .15s; }
 .primary-button:hover:not(:disabled) { background: #0b5f59; transform: translateY(-1px); }
 .primary-button:disabled { cursor: wait; opacity: .65; }
+.loading-spinner { display: inline-block; width: 14px; height: 14px; margin-right: 6px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -2px; animation: button-spin .7s linear infinite; }
+@keyframes button-spin { to { transform: rotate(360deg); } }
 .error-message { margin: 0; padding: 10px 12px; color: #a83c3c; background: #fff1f1; border-radius: 9px; font-size: 14px; }
 .auth-footer { display: flex; justify-content: center; gap: 7px; margin-top: 28px; color: #78908b; font-size: 13px; }
 a { color: #0f766e; font-weight: 700; text-decoration: none; }

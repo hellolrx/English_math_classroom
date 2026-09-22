@@ -125,7 +125,7 @@ onMounted(loadQuestionSets)
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
       <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
       <p v-if="importedCount" class="helper-text import-next-step">已匯入 {{ importedCount }} 題並直接發布。</p>
-      <RouterLink v-if="importedCount" class="status-pill import-next-step-link" to="/teacher/sessions/new">引導老師去工作台建立课堂</RouterLink>
+      <RouterLink v-if="importedCount" class="status-pill import-next-step-link" to="/teacher/sessions/new">去工作台建立课堂</RouterLink>
     </section>
 
     <section v-if="preview" class="preview-panel">

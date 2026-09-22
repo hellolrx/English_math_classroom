@@ -68,7 +68,7 @@ onMounted(async () => {
       </article>
       <div class="button-row session-actions">
         <button v-if="questionSet.status === 'draft'" class="primary-button" :disabled="publishing" @click="publish">{{ publishing ? '发布中…' : '发布题目集合' }}</button>
-        <RouterLink v-else-if="questionSet.status === 'published'" class="status-pill" to="/teacher/sessions/new">引導老師去工作台建立课堂</RouterLink>
+        <RouterLink v-else-if="questionSet.status === 'published'" class="status-pill" to="/teacher/sessions/new">去工作台建立课堂</RouterLink>
         <span v-else class="status-pill">已归档</span>
         <button v-if="questionSet.status !== 'archived'" class="secondary-button" :disabled="archiving" @click="archive">{{ archiving ? '归档中…' : '归档题目集合' }}</button>
       </div>
