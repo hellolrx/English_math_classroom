@@ -495,7 +495,9 @@ async def import_question_set(
             "created_by": teacher["user_id"],
             "name": clean_name,
             "source_filename": file.filename,
-            "status": "published",
+            # 导入期间先使用内部草稿状态，等待题目、选项和正确答案全部写入后再发布。
+            # 这样不会触发已发布题目的不可修改保护；该中间状态不会返回给前端。
+            "status": "draft",
             "version": 1,
         },
     )
@@ -564,6 +566,18 @@ async def import_question_set(
             )
             if update_status >= 400:
                 raise RuntimeError("写入正确答案失败")
+
+        publish_status, _ = await supabase_request(
+            request,
+            "PATCH",
+            "/rest/v1/question_sets",
+            service_role=True,
+            prefer_representation=True,
+            params={"id": f"eq.{question_set_id}"},
+            body={"status": "published"},
+        )
+        if publish_status >= 400:
+            raise RuntimeError("发布题目集合失败")
     except Exception as exc:
         await cleanup_question_set(request, question_set_id, question_ids)
         raise HTTPException(status_code=502, detail="题目导入失败，未保留不完整数据") from exc

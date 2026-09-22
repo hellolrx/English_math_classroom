@@ -124,7 +124,8 @@ onMounted(loadQuestionSets)
       <p class="helper-text">必要欄位：題目、選項A、選項B、選項C、選項D、正確答案。解析欄位可以留空。</p>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
       <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
-      <p v-if="importedCount" class="helper-text import-next-step">已匯入 {{ importedCount }} 題並直接發布。接下來可前往 <RouterLink to="/teacher/sessions/new">課堂場次</RouterLink> 建立课堂回答。</p>
+      <p v-if="importedCount" class="helper-text import-next-step">已匯入 {{ importedCount }} 題並直接發布。</p>
+      <RouterLink v-if="importedCount" class="status-pill import-next-step-link" to="/teacher/sessions/new">引導老師去工作台建立课堂</RouterLink>
     </section>
 
     <section v-if="preview" class="preview-panel">

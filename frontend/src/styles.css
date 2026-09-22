@@ -80,6 +80,7 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
 .question-preview-body { min-width: 0; flex: 1; }
 .preview-confirm-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 22px; padding-top: 20px; border-top: 1px solid #e1eeea; }
 .preview-confirm-row .helper-text { margin: 0; }
+.import-next-step-link { display: inline-block; margin-top: 8px; text-decoration: none; }
 .question-preview-body h3 { margin-bottom: 12px; font-size: 16px; line-height: 1.5; }
 .option-preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; color: #67807a; font-size: 14px; }
 .option-preview-grid span { padding: 8px 10px; border-radius: 8px; background: #f7fbfa; }
