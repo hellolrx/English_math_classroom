@@ -2,8 +2,6 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import './styles.css'
-import ArcoVue from '@arco-design/web-vue'
-import '@arco-design/web-vue/dist/arco.css'
 import LoginView from './views/LoginView.vue'
 import TeacherHomeView from './views/TeacherHomeView.vue'
 import StudentJoinView from './views/StudentJoinView.vue'
@@ -38,4 +36,4 @@ router.beforeEach((to) => {
   }
 })
 
-createApp(App).use(ArcoVue).use(router).mount('#app')
+createApp(App).use(router).mount('#app')

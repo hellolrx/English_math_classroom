@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@arco-design/web-vue": "^2.58.0",
     "@vitejs/plugin-vue": "latest",
     "qrcode": "^1.5.4",
     "vite": "latest",

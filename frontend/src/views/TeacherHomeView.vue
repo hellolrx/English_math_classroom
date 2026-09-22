@@ -27,39 +27,39 @@ function logout() {
 </script>
 
 <template>
-  <main class="app-shell ui-v2-shell">
+  <main class="app-shell">
     <header class="topbar">
       <div>
         <p class="eyebrow">ENGLISH MATH CLASSROOM</p>
         <h1>老師工作台</h1>
       </div>
-      <a-button status="danger" type="text" @click="logout">登出</a-button>
+      <button class="text-button" @click="logout">登出</button>
     </header>
 
-    <a-skeleton v-if="loading" :animation="true" :rows="4" />
-    <a-alert v-else-if="errorMessage" type="error" show-icon>{{ errorMessage }}</a-alert>
+    <p v-if="loading" class="loading-state">正在讀取老師資料…</p>
+    <p v-else-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     <template v-else>
-      <a-card class="welcome-panel ui-v2-card" :bordered="false">
+      <section class="welcome-panel">
         <div>
           <p class="eyebrow">WELCOME BACK</p>
           <h2>{{ teacher?.display_name || '老師' }}</h2>
           <p class="muted">已連接到預設學校，可以開始建立題目集合。</p>
         </div>
-        <a-tag color="green">帳戶正常</a-tag>
-      </a-card>
+        <span class="status-pill">帳戶正常</span>
+      </section>
 
       <section class="feature-grid">
-        <RouterLink class="feature-card feature-card-accent feature-card-link ui-v2-card" to="/teacher/question-sets">
+        <RouterLink class="feature-card feature-card-accent feature-card-link" to="/teacher/question-sets">
           <span class="feature-icon">題</span>
           <h3>題目管理</h3>
           <p>上傳 Excel、預覽題目並建立題目集合。</p>
         </RouterLink>
-        <RouterLink class="feature-card feature-card-link ui-v2-card" to="/teacher/sessions/new">
+        <RouterLink class="feature-card feature-card-link" to="/teacher/sessions/new">
           <span class="feature-icon">課</span>
           <h3>課堂／課後</h3>
           <p>建立課堂 QR Code 或課後練習碼。</p>
         </RouterLink>
-        <RouterLink class="feature-card feature-card-link ui-v2-card" to="/teacher/reports">
+        <RouterLink class="feature-card feature-card-link" to="/teacher/reports">
           <span class="feature-icon">統</span>
           <h3>習題統計</h3>
           <p>查看即時課堂及課後練習的作答分布。</p>
