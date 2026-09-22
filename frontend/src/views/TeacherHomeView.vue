@@ -61,8 +61,8 @@ function logout() {
         </RouterLink>
         <RouterLink class="feature-card feature-card-link" to="/teacher/reports">
           <span class="feature-icon">統</span>
-          <h3>即時統計</h3>
-          <p>查看學生提交數量及 A、B、C、D 選項分布。</p>
+          <h3>習題統計</h3>
+          <p>查看即時課堂及課後練習的作答分布。</p>
         </RouterLink>
       </section>
     </template>

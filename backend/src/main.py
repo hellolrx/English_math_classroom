@@ -748,11 +748,11 @@ async def archive_session(
         "GET",
         "/rest/v1/sessions",
         access_token=token,
-        params={"id": f"eq.{session_id}", "select": "id,status"},
+        params={"id": f"eq.{session_id}", "select": "id,status,session_type"},
     )
     if status >= 400 or not sessions:
         raise HTTPException(status_code=404, detail="找不到课堂场次")
-    if sessions[0]["status"] != "closed":
+    if sessions[0]["session_type"] == "classroom" and sessions[0]["status"] != "closed":
         raise HTTPException(status_code=409, detail="只有已结束的课堂可以归档")
     update_status, updated = await supabase_request(
         request,
@@ -1016,7 +1016,7 @@ async def session_report(
         "GET",
         "/rest/v1/sessions",
         access_token=token,
-        params={"id": f"eq.{session_id}", "select": "id,status,created_at,closed_at,question_set_id,class_id,classes(code,name),question_sets(name)"},
+        params={"id": f"eq.{session_id}", "select": "id,status,session_type,created_at,closed_at,question_set_id,class_id,classes(code,name),question_sets(name)"},
     )
     if session_status >= 400 or not sessions:
         raise HTTPException(status_code=404, detail="找不到课堂场次")
@@ -1024,15 +1024,45 @@ async def session_report(
     questions = await session_questions(request, session["question_set_id"])
     question_ids = [question["id"] for question in questions]
     answers: list[dict[str, Any]] = []
+    completed_attempt_count = 0
     options: list[dict[str, Any]] = []
     if question_ids:
-        answer_status, answers = await supabase_request(
-            request,
-            "GET",
-            "/rest/v1/answers",
-            service_role=True,
-            params={"session_id": f"eq.{session_id}", "question_id": f"in.({','.join(question_ids)})", "practice_attempt_id": "is.null", "select": "question_id,selected_option_id,is_correct"},
-        )
+        if session.get("session_type") == "homework":
+            attempt_status, attempts = await supabase_request(
+                request,
+                "GET",
+                "/rest/v1/practice_attempts",
+                service_role=True,
+                params={"session_id": f"eq.{session_id}", "status": "eq.completed", "select": "id,anonymous_device_id,completed_at", "order": "completed_at.desc"},
+            )
+            if attempt_status >= 400:
+                raise HTTPException(status_code=502, detail="无法读取课后练习统计")
+            completed_attempt_count = len(attempts)
+            latest_attempt_ids: list[str] = []
+            latest_devices: set[str] = set()
+            for attempt in attempts:
+                device_id = attempt.get("anonymous_device_id")
+                if device_id and device_id not in latest_devices:
+                    latest_devices.add(device_id)
+                    latest_attempt_ids.append(attempt["id"])
+            if latest_attempt_ids:
+                answer_status, answers = await supabase_request(
+                    request,
+                    "GET",
+                    "/rest/v1/answers",
+                    service_role=True,
+                    params={"session_id": f"eq.{session_id}", "question_id": f"in.({','.join(question_ids)})", "practice_attempt_id": f"in.({','.join(latest_attempt_ids)})", "select": "question_id,selected_option_id,is_correct,practice_attempt_id"},
+                )
+            else:
+                answer_status = 200
+        else:
+            answer_status, answers = await supabase_request(
+                request,
+                "GET",
+                "/rest/v1/answers",
+                service_role=True,
+                params={"session_id": f"eq.{session_id}", "question_id": f"in.({','.join(question_ids)})", "practice_attempt_id": "is.null", "select": "question_id,selected_option_id,is_correct"},
+            )
         option_status, options = await supabase_request(
             request,
             "GET",
@@ -1041,7 +1071,7 @@ async def session_report(
             params={"question_id": f"in.({','.join(question_ids)})", "select": "id,question_id,option_key"},
         )
         if answer_status >= 400 or option_status >= 400:
-            raise HTTPException(status_code=502, detail="无法读取课堂统计")
+            raise HTTPException(status_code=502, detail="无法读取统计")
     options_by_id = {option["id"]: option for option in options}
     report_questions: list[dict[str, Any]] = []
     for question in questions:
@@ -1072,7 +1102,8 @@ async def session_report(
     )
     if participant_status >= 400:
         raise HTTPException(status_code=502, detail="无法读取课堂人数")
-    return {"session": session, "participant_count": len(participants), "total_submitted_count": len(answers), "questions": report_questions}
+    participant_count = len(participants) if session.get("session_type") != "homework" else len({answer.get("practice_attempt_id") for answer in answers if answer.get("practice_attempt_id")})
+    return {"session": session, "participant_count": participant_count, "completed_attempt_count": completed_attempt_count, "total_submitted_count": len(answers), "questions": report_questions}
 
 
 @app.get("/api/public/practice/{access_token}")
