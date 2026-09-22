@@ -78,6 +78,8 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
 .question-preview-card { display: flex; gap: 14px; padding: 16px; border: 1px solid #e1eeea; border-radius: 13px; }
 .question-number { flex: 0 0 32px; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; color: #0f766e; background: #e5f4f0; font-weight: 900; }
 .question-preview-body { min-width: 0; flex: 1; }
+.preview-confirm-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 22px; padding-top: 20px; border-top: 1px solid #e1eeea; }
+.preview-confirm-row .helper-text { margin: 0; }
 .question-preview-body h3 { margin-bottom: 12px; font-size: 16px; line-height: 1.5; }
 .option-preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; color: #67807a; font-size: 14px; }
 .option-preview-grid span { padding: 8px 10px; border-radius: 8px; background: #f7fbfa; }
@@ -127,7 +129,7 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
 .report-bar { display: grid; grid-template-columns: 22px 1fr 28px; gap: 8px; align-items: center; color: #67807a; font-weight: 800; }
 .report-bar div { height: 12px; overflow: hidden; border-radius: 99px; background: #edf5f2; }
 .report-bar i { display: block; height: 100%; border-radius: inherit; background: #0f766e; }
-@media (max-width: 760px) { .reports-layout-inner { grid-template-columns: 1fr; } .report-tabs { flex-wrap: wrap; } .report-refresh-button { margin-left: 0; } .report-summary { flex-direction: column; } .report-question-heading { flex-direction: column; } }
+@media (max-width: 760px) { .reports-layout-inner { grid-template-columns: 1fr; } .report-tabs { flex-wrap: wrap; } .report-refresh-button { margin-left: 0; } .report-summary { flex-direction: column; } .report-question-heading { flex-direction: column; } .preview-confirm-row { align-items: stretch; flex-direction: column; } }
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 18px; color: #67807a; font-size: 13px; }
 .pagination .secondary-button { padding: 8px 10px; font-size: 12px; }
 .inline-button { display: inline-block; margin-top: 14px; }

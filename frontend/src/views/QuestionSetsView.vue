@@ -122,12 +122,9 @@ onMounted(loadQuestionSets)
         </label>
       </div>
       <p class="helper-text">必要欄位：題目、選項A、選項B、選項C、選項D、正確答案。解析欄位可以留空。</p>
-      <div class="button-row">
-        <button class="primary-button compact-button" type="button" :disabled="loading || !preview" @click="submitImport">{{ importing ? '正在匯入中…' : '確認匯入' }}</button>
-      </div>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
       <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
-      <p v-if="importedCount" class="helper-text import-next-step">已匯入 {{ importedCount }} 題。接下來可前往 <RouterLink to="/teacher/sessions/new">課堂場次</RouterLink> 建立课堂回答。</p>
+      <p v-if="importedCount" class="helper-text import-next-step">已匯入 {{ importedCount }} 題並直接發布。接下來可前往 <RouterLink to="/teacher/sessions/new">課堂場次</RouterLink> 建立课堂回答。</p>
     </section>
 
     <section v-if="preview" class="preview-panel">
@@ -153,6 +150,10 @@ onMounted(loadQuestionSets)
           </div>
         </article>
       </div>
+      <div class="preview-confirm-row">
+        <p class="helper-text">確認以上題目無誤後，再匯入並發布題目集合。</p>
+        <button class="primary-button" type="button" :disabled="loading || importing || !setName.trim()" @click="submitImport">{{ importing ? '正在匯入中…' : '確認匯入並發布' }}</button>
+      </div>
     </section>
 
     <section class="list-panel">
@@ -168,7 +169,7 @@ onMounted(loadQuestionSets)
         <RouterLink v-for="set in questionSets" :key="set.id" :to="`/teacher/question-sets/${set.id}`" class="set-row set-row-link">
           <div>
             <h3>{{ set.name }}</h3>
-            <p>{{ set.source_filename || '沒有來源文件' }} · {{ set.status === 'draft' ? '草稿' : set.status }}</p>
+            <p>{{ set.source_filename || '沒有來源文件' }} · {{ set.status === 'archived' ? '已歸檔' : '已發布' }}</p>
           </div>
           <div class="set-row-meta">
             <span>{{ set.question_count }} 題</span>

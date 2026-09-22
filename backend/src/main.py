@@ -495,7 +495,7 @@ async def import_question_set(
             "created_by": teacher["user_id"],
             "name": clean_name,
             "source_filename": file.filename,
-            "status": "draft",
+            "status": "published",
             "version": 1,
         },
     )
@@ -571,7 +571,7 @@ async def import_question_set(
     return {
         "id": question_set_id,
         "name": clean_name,
-        "status": "draft",
+        "status": "published",
         "question_count": len(questions),
         "source_filename": file.filename,
     }
