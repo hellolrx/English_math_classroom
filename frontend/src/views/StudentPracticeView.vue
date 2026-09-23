@@ -107,10 +107,11 @@ onMounted(load)
       </template>
       <template v-else-if="question">
         <div class="practice-progress"><span>第 {{ index + 1 }} / {{ practice.questions.length }} 題</span><span>已作答 {{ answeredCount }} 題</span></div>
-        <h2 class="student-question">{{ question.question_text }}</h2>
+        <img v-if="question.question_image_url" class="question-image" :src="question.question_image_url" alt="題目圖片" />
+        <h2 v-if="question.question_text" class="student-question">{{ question.question_text }}</h2>
         <div class="student-options">
           <button v-for="option in question.options" :key="option.id" :class="{ selected: selected === option.id }" :disabled="submitting" @click="choose(option)">
-            {{ option.option_key }}. {{ option.option_text }}
+            <strong>{{ option.option_key }}.</strong><img v-if="option.option_image_url" class="option-image" :src="option.option_image_url" alt="選項圖片" /><template v-else>{{ option.option_text }}</template>
           </button>
         </div>
         <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>

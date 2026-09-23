@@ -425,7 +425,9 @@ async def preview_question_set(
             {
                 "row_number": question.row_number,
                 "question_text": question.question_text,
+                "question_image_url": question.question_image_url,
                 "options": question.options,
+                "option_image_urls": question.option_image_urls,
                 "correct_answer": question.correct_answer,
                 "explanation": question.explanation,
             }
@@ -477,7 +479,8 @@ async def import_question_set(
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=422, detail="只支持 .xlsx 格式的 Excel 文件")
     try:
-        questions = parse_question_excel(await file.read())
+        file_content = await file.read()
+        questions = parse_question_excel(file_content)
     except ExcelImportError as error:
         raise import_error_response(error) from error
 
@@ -510,9 +513,10 @@ async def import_question_set(
             "question_set_id": question_set_id,
             "sort_order": order,
             "question_text": question.question_text,
+            "question_image_url": question.question_image_url,
             "explanation": question.explanation,
             "question_type": "single_choice",
-            "content_type": "text",
+            "content_type": "image" if question.question_image_url else "text",
             "language": "en",
         }
         for order, (question_id, question) in enumerate(zip(question_ids, questions), start=1)
@@ -530,7 +534,8 @@ async def import_question_set(
                     "question_id": question_id,
                     "option_key": key,
                     "option_text": question.options[key],
-                    "content_type": "text",
+                    "option_image_url": question.option_image_urls[key],
+                    "content_type": "image" if question.option_image_urls[key] else "text",
                 }
             )
         answer_option_ids.append((question_id, options_by_key[question.correct_answer]))
@@ -1100,6 +1105,7 @@ async def session_report(
             "id": question["id"],
             "sort_order": question["sort_order"],
             "question_text": question.get("question_text"),
+            "question_image_url": question.get("question_image_url"),
             "correct_option_id": question.get("correct_option_id"),
             "correct_option_key": options_by_id.get(question.get("correct_option_id"), {}).get("option_key"),
             "submitted_count": len(question_answers),

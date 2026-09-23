@@ -57,10 +57,13 @@ onMounted(async () => {
       <article v-for="question in questionSet.questions" :key="question.id" class="question-preview-card">
         <div class="question-number">{{ question.sort_order }}</div>
         <div class="question-preview-body">
-          <h3>{{ question.question_text || '圖片題目' }}</h3>
+          <img v-if="question.question_image_url" class="question-image" :src="question.question_image_url" alt="題目圖片" />
+          <h3 v-if="question.question_text">{{ question.question_text }}</h3>
           <div class="option-preview-grid">
             <span v-for="option in question.options" :key="option.id" :class="{ correct: option.id === question.correct_option_id }">
-              {{ option.option_key }}. {{ option.option_text || '圖片選項' }}
+              <strong>{{ option.option_key }}.</strong>
+              <img v-if="option.option_image_url" class="option-image" :src="option.option_image_url" alt="選項圖片" />
+              <template v-else>{{ option.option_text }}</template>
             </span>
           </div>
           <p v-if="question.explanation" class="helper-text">解析：{{ question.explanation }}</p>

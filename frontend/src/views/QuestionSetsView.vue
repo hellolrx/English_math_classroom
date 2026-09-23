@@ -141,10 +141,13 @@ onMounted(loadQuestionSets)
         <article v-for="(question, index) in preview.questions" :key="question.row_number" class="question-preview-card">
           <div class="question-number">{{ index + 1 }}</div>
           <div class="question-preview-body">
-            <h3>{{ question.question_text }}</h3>
+            <img v-if="question.question_image_url" class="question-image" :src="question.question_image_url" alt="題目圖片" />
+            <h3 v-if="question.question_text">{{ question.question_text }}</h3>
             <div class="option-preview-grid">
               <span v-for="key in ['A', 'B', 'C', 'D']" :key="key" :class="{ correct: key === question.correct_answer }">
-                {{ key }}. {{ question.options[key] }}
+                <strong>{{ key }}.</strong>
+                <img v-if="question.option_image_urls?.[key]" class="option-image" :src="question.option_image_urls[key]" alt="選項圖片" />
+                <template v-else>{{ question.options[key] }}</template>
               </span>
             </div>
             <p v-if="question.explanation" class="helper-text">解析：{{ question.explanation }}</p>
