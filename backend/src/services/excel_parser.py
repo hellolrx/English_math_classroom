@@ -14,6 +14,11 @@ from openpyxl.utils import get_column_letter
 
 
 MAX_QUESTION_COUNT = 500
+# Images are stored as Base64 data URLs in the existing text columns. Keep the
+# encoded value below 1 MiB so a single upload cannot create an unexpectedly
+# large database row. The raw target is lower because Base64 adds ~33%.
+MAX_IMAGE_DATA_URL_BYTES = 1024 * 1024
+MAX_IMAGE_RAW_BYTES = 700 * 1024
 
 HEADER_ALIASES: dict[str, tuple[str, ...]] = {
     "question_text": ("题目", "题目内容", "question", "question_text"),
@@ -88,7 +93,61 @@ def _data_url(filename: str, content: bytes) -> str:
         ".gif": "image/gif",
         ".webp": "image/webp",
     }.get(suffix, "application/octet-stream")
-    return f"data:{media_type};base64,{base64.b64encode(content).decode('ascii')}"
+    encoded = base64.b64encode(content).decode("ascii")
+    data_url = f"data:{media_type};base64,{encoded}"
+    if len(content) <= MAX_IMAGE_RAW_BYTES and len(data_url.encode("ascii")) <= MAX_IMAGE_DATA_URL_BYTES:
+        return data_url
+
+    try:
+        from PIL import Image, UnidentifiedImageError
+    except ImportError as exc:
+        raise ExcelImportError(["图片文件过大，无法压缩；请使用较小的图片后重新上传"]) from exc
+
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image.load()
+            has_alpha = image.mode in {"RGBA", "LA"} or "transparency" in image.info
+            if has_alpha:
+                converted = image.convert("RGBA")
+            else:
+                converted = image.convert("RGB")
+
+            # First bound dimensions so very large camera photos do not consume
+            # excessive CPU/memory during repeated quality attempts.
+            converted.thumbnail((1800, 1800), Image.Resampling.LANCZOS)
+            candidates: list[bytes] = []
+            for quality in (85, 75, 65, 55, 45, 35):
+                output = BytesIO()
+                # JPEG is substantially smaller for photos and line drawings.
+                # Transparent images are composited onto white before encoding.
+                candidate_image = converted
+                if has_alpha:
+                    background = Image.new("RGB", converted.size, "white")
+                    background.paste(converted, mask=converted.getchannel("A"))
+                    candidate_image = background
+                candidate_image.save(output, format="JPEG", quality=quality, optimize=True, progressive=True)
+                candidates.append(output.getvalue())
+                encoded_candidate = base64.b64encode(candidates[-1]).decode("ascii")
+                candidate_url = f"data:image/jpeg;base64,{encoded_candidate}"
+                if len(candidates[-1]) <= MAX_IMAGE_RAW_BYTES and len(candidate_url.encode("ascii")) <= MAX_IMAGE_DATA_URL_BYTES:
+                    return candidate_url
+
+                # For unusually detailed images, reduce dimensions between passes.
+                if quality == 35 and min(converted.size) > 480:
+                    converted = converted.resize(
+                        (max(1, int(converted.width * 0.8)), max(1, int(converted.height * 0.8))),
+                        Image.Resampling.LANCZOS,
+                    )
+            if candidates:
+                smallest = min(candidates, key=len)
+                encoded_smallest = base64.b64encode(smallest).decode("ascii")
+                smallest_url = f"data:image/jpeg;base64,{encoded_smallest}"
+                if len(smallest_url.encode("ascii")) <= MAX_IMAGE_DATA_URL_BYTES:
+                    return smallest_url
+    except (OSError, UnidentifiedImageError) as exc:
+        raise ExcelImportError(["无法读取或压缩 Excel 中的图片，请更换图片后重新上传"]) from exc
+
+    raise ExcelImportError(["图片压缩后仍超过 1MB，请裁剪图片或使用更小的图片后重新上传"])
 
 
 def _cell_image_formulas(content: bytes) -> dict[str, str]:
