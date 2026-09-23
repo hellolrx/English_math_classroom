@@ -40,6 +40,7 @@ class CreateSessionRequest(BaseModel):
     question_set_id: str = Field(min_length=1)
     class_id: str = Field(min_length=1)
     session_type: str = Field(default="classroom")
+    time_limit_seconds: int | None = Field(default=30, ge=0, le=600)
 
 
 class AnswerRequest(BaseModel):
@@ -604,7 +605,7 @@ async def find_session_by_token(request: Request, access_token: str) -> dict[str
         service_role=True,
         params={
             "access_token": f"eq.{access_token}",
-            "select": "id,created_by,question_set_id,class_id,session_type,access_token,status,current_question_id,current_question_status,starts_at,expires_at,closed_at",
+            "select": "id,created_by,question_set_id,class_id,session_type,access_token,status,current_question_id,current_question_status,starts_at,expires_at,closed_at,time_limit_seconds,question_started_at",
         },
     )
     if status >= 400 or not sessions:
@@ -681,6 +682,59 @@ async def session_questions(request: Request, question_set_id: str) -> list[dict
     return questions
 
 
+def elapsed_seconds(started_at: str | None) -> float | None:
+    if not started_at:
+        return None
+    try:
+        value = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        return (utc_now() - value).total_seconds()
+    except (TypeError, ValueError):
+        return None
+
+
+async def advance_expired_session(request: Request, session: dict[str, Any]) -> dict[str, Any]:
+    """在课堂请求到达时兜底推进到下一题，避免只依赖老师浏览器计时。"""
+    if session.get("session_type") != "classroom" or session.get("status") != "active":
+        return session
+    limit = int(session.get("time_limit_seconds") or 0)
+    elapsed = elapsed_seconds(session.get("question_started_at"))
+    current_id = session.get("current_question_id")
+    if limit <= 0 or elapsed is None or elapsed < limit or not current_id:
+        return session
+    questions = await session_questions(request, session["question_set_id"])
+    current_index = next((index for index, question in enumerate(questions) if question["id"] == current_id), -1)
+    now = utc_now().isoformat()
+    if current_index < 0 or current_index + 1 >= len(questions):
+        body = {"status": "closed", "current_question_status": "locked", "closed_at": now, "question_started_at": None}
+    else:
+        body = {"status": "active", "current_question_id": questions[current_index + 1]["id"], "current_question_status": "open", "question_started_at": now}
+    update_status, updated = await supabase_request(
+        request,
+        "PATCH",
+        "/rest/v1/sessions",
+        service_role=True,
+        prefer_representation=True,
+        params={"id": f"eq.{session['id']}", "current_question_id": f"eq.{current_id}"},
+        body=body,
+    )
+    if update_status < 400 and updated:
+        return updated[0]
+    if update_status < 400:
+        latest_status, latest = await supabase_request(
+            request,
+            "GET",
+            "/rest/v1/sessions",
+            service_role=True,
+            params={
+                "id": f"eq.{session['id']}",
+                "select": "id,question_set_id,class_id,session_type,access_token,status,current_question_id,current_question_status,starts_at,expires_at,closed_at,time_limit_seconds,question_started_at",
+            },
+        )
+        if latest_status < 400 and latest:
+            return latest[0]
+    return session
+
+
 async def question_options(request: Request, question_id: str) -> list[dict[str, Any]]:
     status, options = await supabase_request(
         request,
@@ -706,6 +760,8 @@ def session_public_payload(session: dict[str, Any], question: dict[str, Any] | N
         "current_question_status": session["current_question_status"],
         "starts_at": session.get("starts_at"),
         "expires_at": session.get("expires_at"),
+        "time_limit_seconds": int(session.get("time_limit_seconds") or 0),
+        "question_started_at": session.get("question_started_at"),
         "participant_count": participant_count,
         "question": public_question(question, options) if question else None,
     }
@@ -744,7 +800,7 @@ async def list_sessions(
         access_token=token,
         params={
             "status": "neq.archived",
-            "select": "id,question_set_id,class_id,session_type,access_token,status,current_question_id,current_question_status,starts_at,expires_at,closed_at,archived_at,created_at,classes(code,name),question_sets(name)",
+            "select": "id,question_set_id,class_id,session_type,access_token,status,current_question_id,current_question_status,starts_at,expires_at,closed_at,archived_at,created_at,time_limit_seconds,question_started_at,classes(code,name),question_sets(name)",
             "order": "created_at.desc",
         },
     )
@@ -797,6 +853,9 @@ async def create_session(
     teacher = await current_teacher_profile(request, token)
     if payload.session_type not in {"classroom", "homework"}:
         raise HTTPException(status_code=422, detail="不支持的场次类型")
+    time_limit_seconds = 0 if payload.session_type == "homework" else int(payload.time_limit_seconds or 0)
+    if time_limit_seconds and time_limit_seconds < 10:
+        raise HTTPException(status_code=422, detail="课堂限时最少为 10 秒，或选择不限时")
     set_status, sets = await supabase_request(
         request,
         "GET",
@@ -836,6 +895,8 @@ async def create_session(
             "status": "waiting" if payload.session_type == "classroom" else "active",
             "current_question_status": "pending",
             "starts_at": utc_now().isoformat() if payload.session_type == "homework" else None,
+            "time_limit_seconds": time_limit_seconds,
+            "question_started_at": None,
         },
     )
     if status >= 400 or not result:
@@ -862,7 +923,7 @@ async def start_session(
         "GET",
         "/rest/v1/sessions",
         access_token=token,
-        params={"id": f"eq.{session_id}", "select": "id,question_set_id,status"},
+        params={"id": f"eq.{session_id}", "select": "id,question_set_id,status,time_limit_seconds"},
     )
     if status >= 400 or not sessions:
         raise HTTPException(status_code=404, detail="找不到课堂场次")
@@ -876,7 +937,7 @@ async def start_session(
         service_role=True,
         prefer_representation=True,
         params={"id": f"eq.{session_id}"},
-        body={"status": "active", "current_question_id": questions[0]["id"], "current_question_status": "open", "starts_at": utc_now().isoformat()},
+        body={"status": "active", "current_question_id": questions[0]["id"], "current_question_status": "open", "starts_at": utc_now().isoformat(), "question_started_at": utc_now().isoformat()},
     )
     if update_status >= 400 or not result:
         raise HTTPException(status_code=502, detail="开始课堂失败")
@@ -896,7 +957,7 @@ async def next_session_question(
         "GET",
         "/rest/v1/sessions",
         access_token=token,
-        params={"id": f"eq.{session_id}", "select": "id,question_set_id,current_question_id,status"},
+        params={"id": f"eq.{session_id}", "select": "id,question_set_id,current_question_id,status,time_limit_seconds,question_started_at"},
     )
     if status >= 400 or not sessions:
         raise HTTPException(status_code=404, detail="找不到课堂场次")
@@ -911,7 +972,7 @@ async def next_session_question(
             service_role=True,
             prefer_representation=True,
             params={"id": f"eq.{session_id}"},
-            body={"status": "closed", "current_question_status": "locked", "closed_at": utc_now().isoformat()},
+            body={"status": "closed", "current_question_status": "locked", "closed_at": utc_now().isoformat(), "question_started_at": None},
         )
     else:
         update_status, result = await supabase_request(
@@ -921,7 +982,7 @@ async def next_session_question(
             service_role=True,
             prefer_representation=True,
             params={"id": f"eq.{session_id}"},
-            body={"status": "active", "current_question_id": questions[current_index + 1]["id"], "current_question_status": "open"},
+            body={"status": "active", "current_question_id": questions[current_index + 1]["id"], "current_question_status": "open", "question_started_at": utc_now().isoformat()},
         )
     if update_status >= 400 or not result:
         raise HTTPException(status_code=502, detail="切换题目失败")
@@ -941,7 +1002,7 @@ async def previous_session_question(
         "GET",
         "/rest/v1/sessions",
         access_token=token,
-        params={"id": f"eq.{session_id}", "select": "id,question_set_id,current_question_id,status"},
+        params={"id": f"eq.{session_id}", "select": "id,question_set_id,current_question_id,status,time_limit_seconds,question_started_at"},
     )
     if status >= 400 or not sessions:
         raise HTTPException(status_code=404, detail="找不到课堂场次")
@@ -959,7 +1020,7 @@ async def previous_session_question(
         service_role=True,
         prefer_representation=True,
         params={"id": f"eq.{session_id}"},
-        body={"current_question_id": questions[current_index - 1]["id"], "current_question_status": "open"},
+        body={"current_question_id": questions[current_index - 1]["id"], "current_question_status": "open", "question_started_at": utc_now().isoformat()},
     )
     if update_status >= 400 or not result:
         raise HTTPException(status_code=502, detail="返回上一题失败")
@@ -979,11 +1040,11 @@ async def session_stats(
         "GET",
         "/rest/v1/sessions",
         access_token=token,
-        params={"id": f"eq.{session_id}", "select": "id,current_question_id,status,current_question_status"},
+        params={"id": f"eq.{session_id}", "select": "id,question_set_id,current_question_id,status,current_question_status,time_limit_seconds,question_started_at"},
     )
     if status >= 400 or not sessions:
         raise HTTPException(status_code=404, detail="找不到课堂场次")
-    session = sessions[0]
+    session = await advance_expired_session(request, sessions[0])
     participant_status, participants = await supabase_request(
         request,
         "GET",
@@ -1019,7 +1080,7 @@ async def session_stats(
             key = option_keys.get(answer["selected_option_id"])
             if key in distribution:
                 distribution[key] += 1
-    return {"session_id": session_id, "status": session["status"], "current_question_status": session["current_question_status"], "current_question_id": session.get("current_question_id"), "participant_count": len(participants), "submitted_count": len(answers), "distribution": distribution}
+    return {"session_id": session_id, "status": session["status"], "current_question_status": session["current_question_status"], "current_question_id": session.get("current_question_id"), "time_limit_seconds": int(session.get("time_limit_seconds") or 0), "question_started_at": session.get("question_started_at"), "participant_count": len(participants), "submitted_count": len(answers), "distribution": distribution}
 
 
 @app.get("/api/sessions/{session_id}/report")
@@ -1249,6 +1310,7 @@ async def complete_public_practice(access_token: str, payload: PracticeCompleteR
 @app.get("/api/public/sessions/{access_token}")
 async def public_session(access_token: str, request: Request) -> dict[str, Any]:
     session = await find_session_by_token(request, access_token)
+    session = await advance_expired_session(request, session)
     participant_status, participants = await supabase_request(
         request,
         "GET",
@@ -1328,6 +1390,11 @@ async def join_public_session(access_token: str, payload: JoinRequest, request: 
 @app.post("/api/public/sessions/{access_token}/answers")
 async def submit_public_answer(access_token: str, payload: AnswerRequest, request: Request) -> dict[str, Any]:
     session = await find_session_by_token(request, access_token)
+    session = await advance_expired_session(request, session)
+    if session.get("session_type") != "classroom" or session.get("status") != "active" or session.get("current_question_status") != "open":
+        raise HTTPException(status_code=409, detail="当前题目已结束，答案未提交")
+    if session.get("current_question_id") != payload.question_id:
+        raise HTTPException(status_code=409, detail="当前题目已切换，答案未提交")
     device_hash = browser_key_hash(payload.browser_key)
     device_status, devices = await supabase_request(
         request,
