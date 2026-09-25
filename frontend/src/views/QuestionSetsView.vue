@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { getQuestionSets, importQuestionSet, previewQuestionSet } from '../api/client'
+import { getClasses, getQuestionSets, importQuestionSet, previewQuestionSet } from '../api/client'
 
 const fileInput = ref(null)
 const selectedFile = ref(null)
@@ -13,6 +13,8 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const importing = ref(false)
 const importedCount = ref(0)
+const grades = ref([])
+const selectedGrade = ref('')
 
 async function loadQuestionSets() {
   loadingList.value = true
@@ -65,7 +67,7 @@ async function submitImport() {
   loading.value = true
   importing.value = true
   try {
-    const result = await importQuestionSet(setName.value.trim(), selectedFile.value)
+    const result = await importQuestionSet(setName.value.trim(), selectedFile.value, selectedGrade.value)
     successMessage.value = `已匯入「${result.name}」，共 ${result.question_count} 題`
     importedCount.value = result.question_count
     setName.value = ''
@@ -90,7 +92,14 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('zh-HK', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
-onMounted(loadQuestionSets)
+onMounted(async () => {
+  await loadQuestionSets()
+  try {
+    const classes = await getClasses()
+    grades.value = [...new Map(classes.map(item => [item.grade_id, item.grades || { name: item.grade_id }])).entries()].map(([id, data]) => ({ id, ...data }))
+    selectedGrade.value = grades.value[0]?.id || ''
+  } catch { /* grade is optional for existing teacher imports */ }
+})
 </script>
 
 <template>
@@ -115,6 +124,10 @@ onMounted(loadQuestionSets)
         <label>
           <span>題目集合名稱</span>
           <input v-model="setName" placeholder="例如：S1 Algebra Chapter 1" />
+        </label>
+        <label>
+          <span>所屬年級（供學生分類）</span>
+          <select v-model="selectedGrade" class="text-input"><option value="">未分類</option><option v-for="grade in grades" :key="grade.id" :value="grade.id">{{ grade.name }}</option></select>
         </label>
         <label>
           <span>Excel 文件</span>

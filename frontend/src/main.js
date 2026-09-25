@@ -12,6 +12,9 @@ import TeacherSessionView from './views/TeacherSessionView.vue'
 import StudentSessionView from './views/StudentSessionView.vue'
 import StudentPracticeView from './views/StudentPracticeView.vue'
 import ReportsView from './views/ReportsView.vue'
+import StudentHomeView from './views/StudentHomeView.vue'
+import StudentSetPracticeView from './views/StudentSetPracticeView.vue'
+import StudentReviewView from './views/StudentReviewView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -25,6 +28,9 @@ const router = createRouter({
     { path: '/teacher/sessions/:id', component: TeacherSessionView, meta: { requiresTeacher: true } },
     { path: '/teacher/reports', component: ReportsView, meta: { requiresTeacher: true } },
     { path: '/student/join', component: StudentJoinView },
+    { path: '/student', component: StudentHomeView, meta: { requiresStudent: true } },
+    { path: '/student/question-sets/:id', component: StudentSetPracticeView, meta: { requiresStudent: true } },
+    { path: '/student/review', component: StudentReviewView, meta: { requiresStudent: true } },
     { path: '/student/session/:token', component: StudentSessionView },
     { path: '/student/practice/:code', component: StudentPracticeView },
   ],
@@ -34,6 +40,7 @@ router.beforeEach((to) => {
   if (to.meta.requiresTeacher && !localStorage.getItem('hhx_access_token')) {
     return '/login'
   }
+  if (to.meta.requiresStudent && !localStorage.getItem('hhx_student_token')) return '/login'
 })
 
 createApp(App).use(router).mount('#app')
