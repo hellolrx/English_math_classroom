@@ -6,10 +6,10 @@ import hashlib
 import hmac
 import base64
 import json
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import bcrypt
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -22,14 +22,24 @@ STUDENT_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
 
 def hash_password(password: str) -> str:
-    """Hash a password using bcrypt."""
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    """Hash a password using PBKDF2 with SHA256."""
+    salt = secrets.token_bytes(16)
+    key = hashlib.pbkdf2_hmac('sha256', password.encode("utf-8"), salt, 100000)
+    return f"pbkdf2_sha256${salt.hex()}${key.hex()}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify a password against a bcrypt hash."""
+    """Verify a password against a PBKDF2 hash."""
+    if not password_hash.startswith("pbkdf2_sha256$"):
+        return False
+    parts = password_hash.split("$")
+    if len(parts) != 3:
+        return False
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+        salt = bytes.fromhex(parts[1])
+        stored_key = bytes.fromhex(parts[2])
+        key = hashlib.pbkdf2_hmac('sha256', password.encode("utf-8"), salt, 100000)
+        return hmac.compare_digest(key, stored_key)
     except (ValueError, TypeError):
         return False
 
