@@ -59,6 +59,11 @@ function logout() {
           <h3>課堂／課後</h3>
           <p>建立課堂 QR Code 或課後練習碼。</p>
         </RouterLink>
+        <RouterLink class="feature-card feature-card-link" to="/teacher/vocabulary">
+          <span class="feature-icon">詞</span>
+          <h3>單詞管理</h3>
+          <p>上傳英語單詞表，管理各年級單詞庫。</p>
+        </RouterLink>
         <RouterLink class="feature-card feature-card-link" to="/teacher/reports">
           <span class="feature-icon">統</span>
           <h3>習題統計</h3>
