@@ -1,14 +1,23 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { login } from '../api/client'
 
 const router = useRouter()
+const route = useRoute()
 const username = ref('admin')
 const password = ref('admin123')
 const loading = ref(false)
 const errorMessage = ref('')
 const mode = ref('teacher')
+const allowTestPrefill = import.meta.env.DEV || import.meta.env.VITE_ENABLE_TEST_CREDENTIAL_PREFILL === 'true'
+
+function switchMode() {
+  mode.value = mode.value === 'teacher' ? 'student' : 'teacher'
+  username.value = mode.value === 'student' ? (allowTestPrefill ? 'hhx003' : '') : 'admin'
+  password.value = mode.value === 'student' ? (allowTestPrefill ? '123' : '') : 'admin123'
+  errorMessage.value = ''
+}
 
 async function submit() {
   errorMessage.value = ''
@@ -25,7 +34,10 @@ async function submit() {
     if (mode.value === 'student') {
       localStorage.setItem('hhx_student_token', result.student_token)
       localStorage.setItem('hhx_mode', 'student')
-      router.push('/student')
+      const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/student/')
+        ? route.query.redirect
+        : '/student'
+      router.push(redirect)
     } else {
       localStorage.setItem('hhx_access_token', result.access_token)
       localStorage.setItem('hhx_mode', 'teacher')
@@ -49,8 +61,8 @@ async function submit() {
 
       <form class="form-stack" @submit.prevent="submit">
         <label>
-          <span>帳號</span>
-          <input v-model="username" autocomplete="username" placeholder="請輸入帳號" />
+          <span>{{ mode === 'student' ? '學號' : '老師帳號' }}</span>
+          <input v-model="username" autocomplete="username" :placeholder="mode === 'student' ? '請輸入學號' : '請輸入老師帳號'" />
         </label>
         <label>
           <span>密碼</span>
@@ -64,7 +76,7 @@ async function submit() {
 
       <div class="auth-footer">
         <span>{{ mode === 'teacher' ? '學生？' : '老師？' }}</span>
-        <button class="link-button" type="button" @click="mode = mode === 'teacher' ? 'student' : 'teacher'; errorMessage = ''">
+        <button class="link-button" type="button" @click="switchMode">
           {{ mode === 'teacher' ? '切換學生登入' : '切換老師登入' }}
         </button>
       </div>

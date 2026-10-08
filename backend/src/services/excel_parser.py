@@ -22,12 +22,9 @@ MAX_IMAGE_RAW_BYTES = 700 * 1024
 
 HEADER_ALIASES: dict[str, tuple[str, ...]] = {
     "question_text": ("题目", "题目内容", "question", "question_text"),
-    "option_a": ("选项A", "選項A", "A", "option_a"),
-    "option_b": ("选项B", "選項B", "B", "option_b"),
-    "option_c": ("选项C", "選項C", "C", "option_c"),
-    "option_d": ("选项D", "選項D", "D", "option_d"),
     "correct_answer": ("正确答案", "正確答案", "答案", "correct_answer", "answer"),
-    "explanation": ("解析", "解釋", "explanation"),
+    "question_type": ("题型", "題型", "question_type"),
+    "source_year": ("年份", "来源年份", "來源年份", "source_year", "year"),
 }
 
 
@@ -36,10 +33,9 @@ class ParsedQuestion:
     row_number: int
     question_text: str
     question_image_url: str | None
-    options: dict[str, str]
-    option_image_urls: dict[str, str | None]
-    correct_answer: str
-    explanation: str | None
+    question_type: str
+    correct_answer: str | None
+    source_year: str | None
 
 
 class ExcelImportError(ValueError):
@@ -68,7 +64,7 @@ def _find_columns(header_row: tuple[Any, ...]) -> dict[str, int]:
             if index is not None:
                 columns[field] = index
                 break
-        if field != "explanation" and field not in columns:
+        if field != "source_year" and field not in columns:
             missing.append(aliases[0])
     if missing:
         raise ExcelImportError([f"缺少必要欄位：{', '.join(missing)}"])
@@ -250,36 +246,29 @@ def parse_question_excel(content: bytes) -> list[ParsedQuestion]:
         question_image_url = formula_images.get(question_cell) or anchored_images.get(question_cell)
         if question_image_url and _DISPIMG_RE.search(question_text):
             question_text = ""
-        options = {
-            key: _text(values[columns[f"option_{key.lower()}"]] if columns[f"option_{key.lower()}"] < len(values) else None)
-            for key in ("A", "B", "C", "D")
+        raw_type = _text(values[columns["question_type"]] if columns["question_type"] < len(values) else None)
+        type_aliases = {
+            "选择题": "single_choice", "選擇題": "single_choice", "single_choice": "single_choice",
+            "非选择题": "text_input", "非選擇題": "text_input", "text_input": "text_input",
         }
-        option_image_urls = {
-            key: formula_images.get(_cell_key(row_number, columns[f"option_{key.lower()}"]))
-            or anchored_images.get(_cell_key(row_number, columns[f"option_{key.lower()}"]))
-            for key in ("A", "B", "C", "D")
-        }
-        for key in ("A", "B", "C", "D"):
-            if option_image_urls[key] and _DISPIMG_RE.search(options[key]):
-                options[key] = ""
+        question_type = type_aliases.get(raw_type.strip().lower())
         raw_answer = _text(values[columns["correct_answer"]] if columns["correct_answer"] < len(values) else None)
         correct_answer = _correct_key(raw_answer)
-        explanation = None
-        if "explanation" in columns and columns["explanation"] < len(values):
-            explanation = _text(values[columns["explanation"]]) or None
+        source_year = _text(values[columns["source_year"]] if "source_year" in columns and columns["source_year"] < len(values) else None) or None
 
         row_errors: list[str] = []
-        if not question_text and not question_image_url:
-            row_errors.append("题目不能为空（可填写文字或插入图片）")
-        for key, option_text in options.items():
-            if not option_text and not option_image_urls[key]:
-                row_errors.append(f"选项{key}不能为空（可填写文字或插入图片）")
-        if correct_answer is None:
+        if not question_image_url:
+            row_errors.append("题目必须包含题目截图（请将图片嵌入题目单元格）")
+        if question_type is None:
+            row_errors.append("题型必须填写“选择题”或“非选择题”")
+        elif question_type == "single_choice" and correct_answer is None:
             row_errors.append("正确答案必须是 A、B、C、D 或 1、2、3、4")
+        elif question_type == "text_input" and raw_answer:
+            row_errors.append("非选择题不设置标准答案，请将正确答案留空")
         if row_errors:
             errors.append(f"第 {row_number} 行：{'；'.join(row_errors)}")
             continue
-        parsed.append(ParsedQuestion(row_number, question_text, question_image_url, options, option_image_urls, correct_answer, explanation))
+        parsed.append(ParsedQuestion(row_number, question_text, question_image_url, question_type, correct_answer, source_year))
 
     if not parsed and not errors:
         errors.append("Excel 文件没有可导入的题目")

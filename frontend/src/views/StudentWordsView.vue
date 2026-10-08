@@ -1,0 +1,11 @@
+<script setup>
+import { onMounted, ref } from 'vue'
+import { getStudentWords, getStudentWordReview, rateStudentWord } from '../api/client'
+const mode = ref('learn'); const words = ref([]); const index = ref(0); const revealed = ref(false); const loading = ref(true); const error = ref('')
+const current = () => words.value[index.value]
+async function load() { loading.value = true; try { words.value = mode.value === 'review' ? await getStudentWordReview() : await getStudentWords() ; index.value = 0; revealed.value = false } catch (e) { error.value = e.message } finally { loading.value = false } }
+async function rate(rating) { const word = current(); if (!word) return; try { await rateStudentWord({ word_id: word.id || word.word_id, rating }); index.value += 1; revealed.value = false } catch (e) { error.value = e.message } }
+async function switchMode(value) { mode.value = value; await load() }
+onMounted(load)
+</script>
+<template><main class="app-shell student-home-shell"><header class="topbar"><div><RouterLink class="back-link-inline" to="/student">← 返回学生工作台</RouterLink><p class="eyebrow">VOCABULARY</p><h1>单词学习</h1><p class="muted">看到单词后先在心里回忆，再查看词义并自评。</p></div></header><div class="choice-grid"><button class="choice-card" :class="{ active: mode === 'learn' }" @click="switchMode('learn')">学习</button><button class="choice-card" :class="{ active: mode === 'review' }" @click="switchMode('review')">复习</button></div><p v-if="loading" class="loading-state">正在读取单词…</p><p v-else-if="error" class="error-message">{{ error }}</p><section v-else-if="current()" class="word-card"><p class="eyebrow">{{ index + 1 }} / {{ words.length }}</p><h2>{{ current().word || current().words?.word }}</h2><button v-if="!revealed" class="primary-button" @click="revealed = true">查看词义</button><template v-else><p class="word-meaning">{{ current().meaning || current().words?.meaning }}</p><div class="choice-grid"><button class="choice-card" @click="rate('forgot')">忘记</button><button class="choice-card" @click="rate('fuzzy')">模糊</button><button class="choice-card" @click="rate('clear')">清楚记得</button></div></template></section><p v-else class="empty-state">{{ mode === 'review' ? '目前没有到期单词。' : '目前没有单词。' }}</p></main></template>

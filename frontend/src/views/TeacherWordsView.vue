@@ -1,0 +1,8 @@
+<script setup>
+import { onMounted, ref } from 'vue'
+import { getClasses, importWords } from '../api/client'
+const grades = ref([]); const gradeId = ref(''); const file = ref(null); const busy = ref(false); const message = ref(''); const error = ref('')
+onMounted(async () => { try { const rows = await getClasses(); grades.value = [...new Map(rows.map(row => [row.grade_id, row.grades])).entries()].map(([id, value]) => ({ id, ...value })); gradeId.value = grades.value[0]?.id || '' } catch (e) { error.value = e.message } })
+async function submit() { if (!file.value || !gradeId.value) return; busy.value = true; error.value = ''; message.value = ''; try { const result = await importWords(gradeId.value, file.value); message.value = `已覆盖词库，共 ${result.word_count} 个单词。` } catch (e) { error.value = e.message } finally { busy.value = false } }
+</script>
+<template><main class="app-shell"><header class="topbar"><div><RouterLink class="back-link-inline" to="/teacher">← 返回老师工作台</RouterLink><p class="eyebrow">VOCABULARY BANK</p><h1>单词词库</h1><p class="muted">按年级覆盖上传；同年级重复单词只保留第一次出现。</p></div></header><section class="detail-panel form-stack"><label><span>年级</span><select v-model="gradeId"><option v-for="grade in grades" :key="grade.id" :value="grade.id">{{ grade.name }}</option></select></label><label><span>Excel 文件</span><input type="file" accept=".xlsx" @change="file = $event.target.files?.[0] || null"></label><p class="helper-text">表头：单词、词义。</p><p v-if="error" class="error-message">{{ error }}</p><p v-if="message" class="success-message">{{ message }}</p><button class="primary-button" :disabled="busy || !file" @click="submit">{{ busy ? '上传中…' : '覆盖词库' }}</button></section></main></template>

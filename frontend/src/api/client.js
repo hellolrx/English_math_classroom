@@ -21,7 +21,10 @@ export async function apiRequest(path, options = {}) {
       const response = await fetch(`${apiBaseUrl}${path}`, { ...options, headers })
       const payload = await response.json().catch(() => ({}))
       if (response.ok) return payload
-      lastError = new Error(payload.detail || payload.message || '請求失敗，請稍後再試')
+      const detail = typeof payload.detail === 'string'
+        ? payload.detail
+        : payload.detail?.errors?.join('\n') || payload.detail?.message || payload.message
+      lastError = new Error(detail || '請求失敗，請稍後再試')
       if (!canRetry || response.status < 500 || attempt === 2) throw lastError
     } catch (error) {
       lastError = error
@@ -39,154 +42,73 @@ export async function login(username, password, mode = 'teacher') {
   })
 }
 
+export async function getCurrentStudent() {
+  return apiRequest('/api/student/me')
+}
+
+export async function logoutStudent() {
+  return apiRequest('/api/student/logout', { method: 'POST' })
+}
+
+export async function getStudentTopics() {
+  return apiRequest('/api/student/topics')
+}
+
+export async function startStudentRound(context) {
+  return apiRequest('/api/student/rounds/start', { method: 'POST', body: JSON.stringify(context) })
+}
+
+export async function saveStudentRoundAnswer(payload) {
+  return apiRequest('/api/student/rounds/answer', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function finishStudentRound(payload) {
+  return apiRequest('/api/student/rounds/finish', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function getTeacherTopics() {
+  return apiRequest('/api/teacher/topics')
+}
+
+export async function getTeacherTopic(id) {
+  return apiRequest(`/api/teacher/topics/${encodeURIComponent(id)}`)
+}
+
+export async function previewTopicImport(topicId, file) {
+  const body = new FormData()
+  body.append('topic_id', topicId)
+  body.append('file', file)
+  return apiRequest('/api/teacher/topics/preview', { method: 'POST', body })
+}
+
+export async function importTopic(topicId, file) {
+  const body = new FormData()
+  body.append('topic_id', topicId)
+  body.append('file', file)
+  return apiRequest('/api/teacher/topics/import', { method: 'POST', body })
+}
+
+export async function getClassroom(token) { return apiRequest(`/api/classroom/${encodeURIComponent(token)}`) }
+export async function joinClassroom(token) { return apiRequest(`/api/classroom/${encodeURIComponent(token)}/join`, { method: 'POST' }) }
+export async function answerClassroom(token, payload) { return apiRequest(`/api/classroom/${encodeURIComponent(token)}/answer`, { method: 'POST', body: JSON.stringify(payload) }) }
+export async function startTeacherClassroom(id) { return apiRequest(`/api/teacher/classrooms/${id}/start`, { method: 'POST' }) }
+export async function nextTeacherClassroom(id) { return apiRequest(`/api/teacher/classrooms/${id}/next`, { method: 'POST' }) }
+export async function getTeacherClassroomStats(id) { return apiRequest(`/api/teacher/classrooms/${id}/stats`) }
+export async function getStudentWords() { return apiRequest('/api/student/words') }
+export async function getStudentWordReview() { return apiRequest('/api/student/words/review') }
+export async function rateStudentWord(payload) { return apiRequest('/api/student/words/rate', { method: 'POST', body: JSON.stringify(payload) }) }
+export async function importWords(gradeId, file) { const body = new FormData(); body.append('grade_id', gradeId); body.append('file', file); return apiRequest('/api/teacher/words/import', { method: 'POST', body }) }
+export async function getTeacherReports() { return apiRequest('/api/teacher/reports') }
+export async function getTeacherReport(kind, id) { return apiRequest(`/api/teacher/reports/${kind}/${id}`) }
+
 export async function getCurrentTeacher() {
   return apiRequest('/api/auth/me')
-}
-
-export async function getQuestionSets() {
-  return apiRequest('/api/question-sets')
-}
-
-export async function getQuestionSet(id) {
-  return apiRequest(`/api/question-sets/${id}`)
-}
-
-export async function previewQuestionSet(file) {
-  const body = new FormData()
-  body.append('file', file)
-  return apiRequest('/api/question-sets/preview', { method: 'POST', body })
-}
-
-export async function importQuestionSet(name, file, gradeId = '') {
-  const body = new FormData()
-  body.append('name', name)
-  if (gradeId) body.append('grade_id', gradeId)
-  body.append('file', file)
-  return apiRequest('/api/question-sets/import', { method: 'POST', body })
-}
-
-export async function publishQuestionSet(id) {
-  return apiRequest(`/api/question-sets/${id}/publish`, { method: 'POST' })
-}
-
-export async function archiveQuestionSet(id) {
-  return apiRequest(`/api/question-sets/${id}/archive`, { method: 'POST' })
 }
 
 export async function getClasses() {
   return apiRequest('/api/classes')
 }
 
-export async function getSessions() {
-  return apiRequest('/api/sessions')
-}
-
 export async function createSession(payload) {
   return apiRequest('/api/sessions', { method: 'POST', body: JSON.stringify(payload) })
-}
-
-export async function startSession(id) {
-  return apiRequest(`/api/sessions/${id}/start`, { method: 'POST' })
-}
-
-export async function nextSession(id) {
-  return apiRequest(`/api/sessions/${id}/next`, { method: 'POST' })
-}
-
-export async function previousSession(id) {
-  return apiRequest(`/api/sessions/${id}/previous`, { method: 'POST' })
-}
-
-export async function getSessionStats(id) {
-  return apiRequest(`/api/sessions/${id}/stats`)
-}
-
-export async function getSessionReport(id) {
-  return apiRequest(`/api/sessions/${id}/report`)
-}
-
-export async function archiveSession(id) {
-  return apiRequest(`/api/sessions/${id}/archive`, { method: 'POST' })
-}
-
-export async function getPublicSession(token) {
-  return apiRequest(`/api/public/sessions/${encodeURIComponent(token)}`)
-}
-
-export async function joinPublicSession(token, browserKey) {
-  return apiRequest(`/api/public/sessions/${encodeURIComponent(token)}/join`, {
-    method: 'POST',
-    body: JSON.stringify({ browser_key: browserKey }),
-  })
-}
-
-export async function submitPublicAnswer(token, payload) {
-  return apiRequest(`/api/public/sessions/${encodeURIComponent(token)}/answers`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export async function getPublicPractice(code) {
-  return apiRequest(`/api/public/practice/${encodeURIComponent(code)}`)
-}
-
-export async function startPublicPractice(code, browserKey) {
-  return apiRequest(`/api/public/practice/${encodeURIComponent(code)}/start`, {
-    method: 'POST',
-    body: JSON.stringify({ browser_key: browserKey }),
-  })
-}
-
-export async function submitPracticeAnswer(code, payload) {
-  return apiRequest(`/api/public/practice/${encodeURIComponent(code)}/answers`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export async function completePublicPractice(code, payload) {
-  return apiRequest(`/api/public/practice/${encodeURIComponent(code)}/complete`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export async function getStudentGrades() {
-  return apiRequest('/api/student/grades')
-}
-
-export async function getStudentQuestionSets(gradeId) {
-  const query = gradeId ? `?grade_id=${encodeURIComponent(gradeId)}` : ''
-  return apiRequest(`/api/student/question-sets${query}`)
-}
-
-export async function getStudentQuestionSet(id) {
-  return apiRequest(`/api/student/question-sets/${encodeURIComponent(id)}`)
-}
-
-export async function startStudentPractice(id, browserKey) {
-  return apiRequest(`/api/student/question-sets/${encodeURIComponent(id)}/start`, { method: 'POST', body: JSON.stringify({ browser_key: browserKey }) })
-}
-
-export async function submitStudentPracticeAnswer(id, payload) {
-  return apiRequest(`/api/student/question-sets/${encodeURIComponent(id)}/answers`, { method: 'POST', body: JSON.stringify(payload) })
-}
-
-export async function completeStudentPractice(id, payload) {
-  return apiRequest(`/api/student/question-sets/${encodeURIComponent(id)}/complete`, { method: 'POST', body: JSON.stringify(payload) })
-}
-
-export async function getStudentReview(gradeId, browserKey) {
-  const params = new URLSearchParams({ browser_key: browserKey })
-  if (gradeId) params.set('grade_id', gradeId)
-  return apiRequest(`/api/student/review?${params.toString()}`)
-}
-
-export async function submitStudentReviewAnswer(payload) {
-  return apiRequest('/api/student/review/answer', { method: 'POST', body: JSON.stringify(payload) })
-}
-
-export async function checkStudentReviewAnswer(payload) {
-  return apiRequest('/api/student/review/check', { method: 'POST', body: JSON.stringify({ ...payload, rating: 'fuzzy' }) })
 }
