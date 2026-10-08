@@ -23,13 +23,9 @@ async function submit() {
     localStorage.removeItem('hhx_access_token')
     localStorage.removeItem('hhx_student_token')
     if (mode.value === 'student') {
-      localStorage.setItem('hhx_student_token', result.access_token)
+      localStorage.setItem('hhx_student_token', result.student_token)
       localStorage.setItem('hhx_mode', 'student')
-      if (result.user?.must_change_password) {
-        router.push('/student')
-      } else {
-        router.push('/student')
-      }
+      router.push('/student')
     } else {
       localStorage.setItem('hhx_access_token', result.access_token)
       localStorage.setItem('hhx_mode', 'teacher')
@@ -49,12 +45,12 @@ async function submit() {
       <div class="brand-mark">數</div>
       <p class="eyebrow">ENGLISH MATH CLASSROOM</p>
       <h1>{{ mode === 'teacher' ? '老師登入' : '學生登入' }}</h1>
-      <p class="muted">{{ mode === 'teacher' ? '管理題目、課堂答題及班級統計' : '輸入學號及密碼進入學習系統' }}</p>
+      <p class="muted">{{ mode === 'teacher' ? '管理題目、課堂答題及班級統計' : '選擇年級、刷題及進行記憶複習' }}</p>
 
       <form class="form-stack" @submit.prevent="submit">
         <label>
-          <span>{{ mode === 'teacher' ? '帳號' : '學號' }}</span>
-          <input v-model="username" autocomplete="username" :placeholder="mode === 'teacher' ? '請輸入帳號' : '請輸入學號'" />
+          <span>帳號</span>
+          <input v-model="username" autocomplete="username" placeholder="請輸入帳號" />
         </label>
         <label>
           <span>密碼</span>

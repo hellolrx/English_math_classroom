@@ -1,118 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getReviewWords, rateWord } from '../api/client'
-
-const words = ref([])
-const index = ref(0)
-const submitted = ref(false)
-const loading = ref(true)
-const errorMessage = ref('')
-const busy = ref(false)
-const currentRating = ref('')
-
-const word = computed(() => words.value[index.value])
-const isLast = computed(() => index.value >= words.value.length - 1)
-
-async function load() {
-  try {
-    words.value = await getReviewWords()
-    index.value = 0
-    submitted.value = false
-    currentRating.value = ''
-  } catch (e) {
-    errorMessage.value = e.message
-  } finally {
-    loading.value = false
-  }
-}
-
-async function rate(rating) {
-  if (!word.value || busy.value || currentRating.value) return
-  busy.value = true
-  currentRating.value = rating
-  try {
-    await rateWord({
-      word_id: word.value.word_id,
-      rating: rating,
-    })
-    submitted.value = true
-    
-    // Delay before moving to next word
-    setTimeout(() => {
-      if (!isLast.value) {
-        index.value += 1
-        submitted.value = false
-        currentRating.value = ''
-      } else {
-        // Load new review words
-        load()
-      }
-    }, 1000)
-  } catch (e) {
-    errorMessage.value = e.message
-    currentRating.value = ''
-  } finally {
-    busy.value = false
-  }
-}
-
+import { checkStudentReviewAnswer, getStudentGrades, getStudentReview, submitStudentReviewAnswer } from '../api/client'
+const grades = ref([]); const gradeId = ref(''); const questions = ref([]); const index = ref(0); const selected = ref(''); const submitted = ref(null); const loading = ref(true); const errorMessage = ref(''); const busy = ref(false)
+const browserKey = (() => { const existing = localStorage.getItem('hhx_browser_key'); if (existing) return existing; const value = crypto.randomUUID(); localStorage.setItem('hhx_browser_key', value); return value })()
+const question = computed(() => questions.value[index.value]); const isLast = computed(() => index.value >= questions.value.length - 1)
+async function load() { try { grades.value = await getStudentGrades(); gradeId.value = grades.value[0]?.id || ''; await refresh() } catch (e) { errorMessage.value = e.message } finally { loading.value = false } }
+async function refresh() { const result = await getStudentReview(gradeId.value, browserKey); questions.value = result.questions || []; index.value = 0; selected.value = ''; submitted.value = null }
+async function answer() { if (busy.value || submitted.value || !selected.value) return; busy.value = true; try { submitted.value = await checkStudentReviewAnswer({ browser_key: browserKey, question_id: question.value.id, selected_option_id: selected.value }) } catch (e) { errorMessage.value = e.message } finally { busy.value = false } }
+async function rate(rating) { if (!selected.value || busy.value) return; busy.value = true; try { submitted.value = await submitStudentReviewAnswer({ browser_key: browserKey, question_id: question.value.id, selected_option_id: selected.value, rating }); if (!isLast.value) { index.value += 1; selected.value = ''; submitted.value = null } else await refresh() } catch (e) { errorMessage.value = e.message } finally { busy.value = false } }
 onMounted(load)
 </script>
-
-<template>
-  <main class="auth-shell">
-    <section class="auth-card student-card student-session-card">
-      <RouterLink class="back-link-inline" to="/student">← 返回學生工作台</RouterLink>
-      <p class="eyebrow">VOCABULARY REVIEW</p>
-      <h1>背單詞</h1>
-      
-      <div v-if="loading" class="loading-state">正在載入單詞…</div>
-      <p v-else-if="errorMessage" class="error-message">{{ errorMessage }}</p>
-      
-      <template v-else-if="word">
-        <div class="review-progress">第 {{ index + 1 }} / {{ words.length }} 個</div>
-        <div class="word-display">
-          <h2 class="word-text">{{ word.word }}</h2>
-          <p v-if="word.meaning" class="word-meaning">{{ word.meaning }}</p>
-          <p v-if="word.familiarity_level" class="word-level">熟練度：{{ word.familiarity_level }}/10</p>
-        </div>
-        
-        <template v-if="!submitted">
-          <p class="muted">你記得這個單詞嗎？</p>
-          <div class="review-rating-row">
-            <button 
-              class="review-button review-forgot" 
-              :disabled="busy" 
-              @click="rate('forgot')"
-            >
-              忘記
-            </button>
-            <button 
-              class="review-button review-fuzzy" 
-              :disabled="busy" 
-              @click="rate('fuzzy')"
-            >
-              模糊
-            </button>
-            <button 
-              class="review-button review-clear" 
-              :disabled="busy" 
-              @click="rate('clear')"
-            >
-              清楚記得
-            </button>
-          </div>
-        </template>
-        
-        <template v-else>
-          <p class="success-message">已記錄，正在切換下一個單詞…</p>
-        </template>
-      </template>
-      
-      <div v-else class="completion-message">
-        <h2>今天沒有待複習單詞</h2>
-        <p>稍後再回來學習新的單詞。</p>
-      </div>
-    </section>
-  </main>
-</template>
+<template><main class="auth-shell"><section class="auth-card student-card student-session-card"><RouterLink class="back-link-inline" to="/student">← 返回學生練習</RouterLink><p class="eyebrow">MEMORY REVIEW</p><h1>記憶複習</h1><div v-if="loading" class="loading-state">正在載入複習題目…</div><p v-else-if="errorMessage" class="error-message">{{ errorMessage }}</p><template v-else-if="question"><div class="review-progress">第 {{ index + 1 }} / {{ questions.length }} 題</div><img v-if="question.question_image_url" class="question-image" :src="question.question_image_url" alt="題目圖片" /><h2 class="student-question">{{ question.question_text }}</h2><div class="student-options"><button v-for="option in question.options" :key="option.id" :class="{ selected: selected === option.id }" :disabled="busy || submitted" @click="selected = option.id"><strong>{{ option.option_key }}.</strong><img v-if="option.option_image_url" class="option-image" :src="option.option_image_url" alt="選項圖片" /><template v-else>{{ option.option_text }}</template></button></div><button class="primary-button practice-next-button" :disabled="!selected || busy || submitted" @click="answer">提交答案</button><template v-if="submitted"><p :class="submitted.is_correct ? 'success-message' : 'pending-message'">{{ submitted.is_correct ? '答對了，請選擇記憶程度。' : '答案未完全正確，請選擇記憶程度。' }}</p><div class="review-rating-row"><button class="review-button review-forgot" @click="rate('forgot')">忘記</button><button class="review-button review-fuzzy" @click="rate('fuzzy')">模糊</button><button class="review-button review-clear" @click="rate('clear')">清楚記得</button></div></template></template><div v-else class="completion-message"><h2>今天沒有到期題目</h2><p>稍後再回來複習，或先到年級題目集合刷題。</p></div></section></main></template>

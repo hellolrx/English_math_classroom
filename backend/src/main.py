@@ -18,20 +18,9 @@ from pyodide.ffi import to_js
 from workers import asgi
 
 from services.excel_parser import ExcelImportError, ParsedQuestion, parse_question_excel
-from services.auth import StudentLoginRequest, ChangePasswordRequest, hash_password, verify_password, create_student_token, decode_jwt
-from services.student_api import router as student_router
-from services.topics_api import router as topics_router
-from services.vocabulary_api import router as vocabulary_router
-from services.session_api import router as session_router
 
 
 app = FastAPI(title="HHX English Math Classroom API", version="0.1.0")
-
-# Include routers
-app.include_router(student_router)
-app.include_router(topics_router)
-app.include_router(vocabulary_router)
-app.include_router(session_router)
 
 
 app.add_middleware(
@@ -50,34 +39,68 @@ class LoginRequest(BaseModel):
     mode: str = Field(default="teacher", pattern="^(teacher|student)$")
 
 
-class StudentLoginPayload(BaseModel):
-    student_no: str = Field(min_length=1, max_length=50)
-    password: str = Field(min_length=1, max_length=256)
-
-
 class CreateSessionRequest(BaseModel):
-    topic_id: str | None = None
-    question_set_id: str | None = None
+    question_set_id: str = Field(min_length=1)
     class_id: str = Field(min_length=1)
     session_type: str = Field(default="classroom")
     time_limit_seconds: int | None = Field(default=30, ge=0, le=600)
-    
-    def __init__(self, **data):
-        super().__init__(**data)
-        # Validate: exactly one of topic_id or question_set_id must be provided
-        if not self.topic_id and not self.question_set_id:
-            raise ValueError("必須提供 topic_id 或 question_set_id")
-        if self.topic_id and self.question_set_id:
-            raise ValueError("不能同時提供 topic_id 和 question_set_id")
 
 
-class StudentLoginPayload(BaseModel):
-    student_no: str = Field(min_length=1, max_length=50)
-    password: str = Field(min_length=1, max_length=256)
+class AnswerRequest(BaseModel):
+    question_id: str = Field(min_length=1)
+    selected_option_id: str = Field(min_length=1)
+    browser_key: str = Field(min_length=16, max_length=200)
+
+
+class JoinRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+
+
+class PracticeStartRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+
+
+class PracticeAnswerRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+    attempt_id: str = Field(min_length=1)
+    question_id: str = Field(min_length=1)
+    selected_option_id: str = Field(min_length=1)
+
+
+class PracticeCompleteRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+    attempt_id: str = Field(min_length=1)
+
+
+class StudentPracticeStartRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+
+
+class StudentPracticeAnswerRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+    attempt_id: str = Field(min_length=1)
+    question_id: str = Field(min_length=1)
+    selected_option_id: str = Field(min_length=1)
+
+
+class StudentPracticeCompleteRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+    attempt_id: str = Field(min_length=1)
+
+
+class ReviewAnswerRequest(BaseModel):
+    browser_key: str = Field(min_length=16, max_length=200)
+    question_id: str = Field(min_length=1)
+    selected_option_id: str = Field(min_length=1)
+    rating: str = Field(pattern="^(forgot|fuzzy|clear)$")
 
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def browser_key_hash(browser_key: str) -> str:
+    return hashlib.sha256(browser_key.encode("utf-8")).hexdigest()
 
 
 def public_question(question: dict[str, Any], options: list[dict[str, Any]]) -> dict[str, Any]:
@@ -117,6 +140,25 @@ def student_token_secret(request: Request) -> bytes:
     if not secret:
         raise HTTPException(status_code=503, detail="後端尚未設定學生登入密鑰")
     return secret.encode("utf-8")
+
+
+def create_student_token(request: Request) -> str:
+    payload = f"student:{int(utc_now().timestamp()) + 86400}"
+    signature = hmac.new(student_token_secret(request), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return base64.urlsafe_b64encode(f"{payload}:{signature}".encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def verify_student_token(request: Request, authorization: str | None) -> None:
+    token = bearer_token(authorization)
+    try:
+        raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode("utf-8")
+        mode, expires, signature = raw.split(":", 2)
+        payload = f"{mode}:{expires}"
+        expected = hmac.new(student_token_secret(request), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        if mode != "student" or int(expires) < int(utc_now().timestamp()) or not hmac.compare_digest(signature, expected):
+            raise ValueError
+    except (ValueError, TypeError, UnicodeDecodeError):
+        raise HTTPException(status_code=401, detail="學生登入狀態已失效，請重新登入")
 
 
 def supabase_headers(
@@ -231,81 +273,32 @@ async def health() -> dict[str, str]:
 @app.post("/api/auth/login")
 async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
     username = payload.username.strip()
-    
+    configured_email = env_value(request, "TEACHER_LOGIN_EMAIL", "admin@hhx.local")
+    email = configured_email if username.lower() == "admin" else username
+    if "@" not in email:
+        raise HTTPException(status_code=401, detail="帳號或密碼不正確")
+
+    status, result = await supabase_request(
+        request,
+        "POST",
+        "/auth/v1/token",
+        params={"grant_type": "password"},
+        body={"email": email, "password": payload.password},
+    )
+    if status >= 400:
+        raise HTTPException(status_code=401, detail="帳號或密碼不正確")
     if payload.mode == "student":
-        # Student login with bcrypt
-        status, students = await supabase_request(
-            request,
-            "GET",
-            "/rest/v1/students",
-            params={
-                "select": "id,student_no,password_hash,grade_id,class_id,must_change_password,is_active",
-                "student_no": f"eq.{username}",
-                "is_active": "eq:true",
-                "limit": "1",
-            },
-        )
-        if status >= 400:
-            raise HTTPException(status_code=502, detail="服務器錯誤")
-        
-        if not isinstance(students, list) or not students:
-            raise HTTPException(status_code=401, detail="帳號或密碼不正確")
-        
-        student = students[0]
-        
-        # Verify password with bcrypt
-        if not verify_password(payload.password, student["password_hash"]):
-            raise HTTPException(status_code=401, detail="帳號或密碼不正確")
-        
-        # Create JWT token
-        token = create_student_token(
-            student_id=student["id"],
-            student_no=student["student_no"],
-            grade_id=student["grade_id"]
-        )
-        
-        # Update last_login_at
-        await supabase_request(
-            request,
-            "PATCH",
-            "/rest/v1/students",
-            params={"id": f"eq.{student['id']}"},
-            body={"last_login_at": utc_now().isoformat()},
-        )
-        
         return {
             "mode": "student",
-            "access_token": token,
-            "user": {
-                "id": student["id"],
-                "student_no": student["student_no"],
-                "display_name": f"學生{student['student_no']}",
-                "must_change_password": student.get("must_change_password", False),
-            },
+            "student_token": create_student_token(request),
+            "user": {"display_name": "學生"},
         }
-    else:
-        # Teacher login via Supabase Auth
-        configured_email = env_value(request, "TEACHER_LOGIN_EMAIL", "admin@hhx.local")
-        email = configured_email if username.lower() == "admin" else username
-        if "@" not in email:
-            raise HTTPException(status_code=401, detail="帳號或密碼不正確")
-        
-        status, result = await supabase_request(
-            request,
-            "POST",
-            "/auth/v1/token",
-            params={"grant_type": "password"},
-            body={"email": email, "password": payload.password},
-        )
-        if status >= 400:
-            raise HTTPException(status_code=401, detail="帳號或密碼不正確")
-        
-        return {
-            "mode": "teacher",
-            "access_token": result.get("access_token"),
-            "expires_in": result.get("expires_in"),
-            "user": result.get("user"),
-        }
+    return {
+        "mode": "teacher",
+        "access_token": result.get("access_token"),
+        "expires_in": result.get("expires_in"),
+        "user": result.get("user"),
+    }
 
 
 @app.get("/api/auth/me")
@@ -682,6 +675,55 @@ async def find_session_by_token(request: Request, access_token: str) -> dict[str
     if session["expires_at"] <= utc_now().isoformat():
         raise HTTPException(status_code=410, detail="二维码已过期")
     return session
+
+
+async def ensure_anonymous_device(request: Request, browser_key: str) -> str:
+    device_hash = browser_key_hash(browser_key)
+    device_status, devices = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/anonymous_devices",
+        service_role=True,
+        params={"browser_key_hash": f"eq.{device_hash}", "select": "id"},
+    )
+    if device_status >= 400:
+        raise HTTPException(status_code=502, detail="无法建立匿名设备")
+    if devices:
+        return devices[0]["id"]
+    create_status, created = await supabase_request(
+        request,
+        "POST",
+        "/rest/v1/anonymous_devices",
+        service_role=True,
+        prefer_representation=True,
+        body={"browser_key_hash": device_hash},
+    )
+    if create_status >= 400 or not created:
+        raise HTTPException(status_code=502, detail="无法建立匿名设备")
+    return created[0]["id"]
+
+
+async def join_anonymous_session(request: Request, session_id: str, device_id: str) -> None:
+    participant_status, participants = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/session_participants",
+        service_role=True,
+        params={"session_id": f"eq.{session_id}", "anonymous_device_id": f"eq.{device_id}", "select": "id"},
+    )
+    if participant_status >= 400:
+        raise HTTPException(status_code=502, detail="无法加入练习")
+    if not participants:
+        join_status, _ = await supabase_request(
+            request,
+            "POST",
+            "/rest/v1/session_participants",
+            service_role=True,
+            prefer_representation=True,
+            body={"session_id": session_id, "anonymous_device_id": device_id},
+        )
+        if join_status >= 400:
+            raise HTTPException(status_code=502, detail="无法加入练习")
 
 
 async def session_questions(request: Request, question_set_id: str) -> list[dict[str, Any]]:
@@ -1067,7 +1109,7 @@ async def session_stats(
     participant_status, participants = await supabase_request(
         request,
         "GET",
-        "/rest/v1/session_students",
+        "/rest/v1/session_participants",
         access_token=token,
         params={"session_id": f"eq.{session_id}", "select": "id"},
     )
@@ -1077,33 +1119,29 @@ async def session_stats(
         answer_status, answers = await supabase_request(
             request,
             "GET",
-            "/rest/v1/student_answers",
+            "/rest/v1/answers",
             access_token=token,
-            params={"session_id": f"eq.{session_id}", "question_id": f"eq.{session['current_question_id']}", "select": "selected_option_id,is_correct"},
+            params={"session_id": f"eq.{session_id}", "question_id": f"eq.{session['current_question_id']}", "practice_attempt_id": "is.null", "select": "selected_option_id"},
         )
     if participant_status >= 400 or answer_status >= 400:
         raise HTTPException(status_code=502, detail="无法读取课堂统计")
     distribution: dict[str, int] = {"A": 0, "B": 0, "C": 0, "D": 0}
-    correct_count = 0
     if answers:
+        option_status, options = await supabase_request(
+            request,
+            "GET",
+            "/rest/v1/question_options",
+            access_token=token,
+            params={"id": f"in.({','.join(answer['selected_option_id'] for answer in answers)})", "select": "id,option_key"},
+        )
+        if option_status >= 400:
+            raise HTTPException(status_code=502, detail="无法读取选项统计")
+        option_keys = {option["id"]: option["option_key"] for option in options}
         for answer in answers:
-            if answer.get("is_correct"):
-                correct_count += 1
-            if answer.get("selected_option_id"):
-                # For the new model, we need to map option_id to option_key
-                # This is a simplification - in production we'd need to query the options
-                option_status, option = await supabase_request(
-                    request,
-                    "GET",
-                    "/rest/v1/question_options",
-                    access_token=token,
-                    params={"id": f"eq.{answer['selected_option_id']}", "select": "option_key"},
-                )
-                if option_status < 400 and isinstance(option, list) and option:
-                    key = option[0].get("option_key")
-                    if key in distribution:
-                        distribution[key] += 1
-    return {"session_id": session_id, "status": session["status"], "current_question_status": session["current_question_status"], "current_question_id": session.get("current_question_id"), "time_limit_seconds": int(session.get("time_limit_seconds") or 0), "question_started_at": session.get("question_started_at"), "participant_count": len(participants), "submitted_count": len(answers), "correct_count": correct_count, "distribution": distribution}
+            key = option_keys.get(answer["selected_option_id"])
+            if key in distribution:
+                distribution[key] += 1
+    return {"session_id": session_id, "status": session["status"], "current_question_status": session["current_question_status"], "current_question_id": session.get("current_question_id"), "time_limit_seconds": int(session.get("time_limit_seconds") or 0), "question_started_at": session.get("question_started_at"), "participant_count": len(participants), "submitted_count": len(answers), "distribution": distribution}
 
 
 @app.get("/api/sessions/{session_id}/report")
@@ -1119,52 +1157,53 @@ async def session_report(
         "GET",
         "/rest/v1/sessions",
         access_token=token,
-        params={"id": f"eq.{session_id}", "select": "id,status,session_type,created_at,closed_at,question_set_id,topic_id,class_id,classes(code,name),question_sets(name)"},
+        params={"id": f"eq.{session_id}", "select": "id,status,session_type,created_at,closed_at,question_set_id,class_id,classes(code,name),question_sets(name)"},
     )
     if session_status >= 400 or not sessions:
         raise HTTPException(status_code=404, detail="找不到课堂场次")
     session = sessions[0]
-    
-    # Get questions - handle both topic_id and question_set_id
-    if session.get("question_set_id"):
-        questions = await session_questions(request, session["question_set_id"])
-    elif session.get("topic_id"):
-        # Get questions for the topic
-        qs_status, question_sets = await supabase_request(
-            request,
-            "GET",
-            "/rest/v1/question_sets",
-            service_role=True,
-            params={"topic_id": f"eq.{session['topic_id']}", "status": "eq.published", "select": "id"},
-        )
-        if qs_status < 400 and isinstance(question_sets, list) and question_sets:
-            question_set_ids = [qs["id"] for qs in question_sets]
-            q_status, all_questions = await supabase_request(
-                request,
-                "GET",
-                "/rest/v1/questions",
-                service_role=True,
-                params={"question_set_id": f"in.({','.join(question_set_ids)})", "select": "id,sort_order,question_text,question_image_url,explanation,question_type,content_type,correct_option_id", "order": "sort_order.asc"},
-            )
-            questions = all_questions if q_status < 400 and isinstance(all_questions, list) else []
-        else:
-            questions = []
-    else:
-        questions = []
-    
+    questions = await session_questions(request, session["question_set_id"])
     question_ids = [question["id"] for question in questions]
     answers: list[dict[str, Any]] = []
+    completed_attempt_count = 0
     options: list[dict[str, Any]] = []
-    
     if question_ids:
-        # For the new model, we use student_answers directly
-        answer_status, answers = await supabase_request(
-            request,
-            "GET",
-            "/rest/v1/student_answers",
-            service_role=True,
-            params={"session_id": f"eq.{session_id}", "question_id": f"in.({','.join(question_ids)})", "select": "question_id,selected_option_id,is_correct,answer_type,answer_text"},
-        )
+        if session.get("session_type") == "homework":
+            attempt_status, attempts = await supabase_request(
+                request,
+                "GET",
+                "/rest/v1/practice_attempts",
+                service_role=True,
+                params={"session_id": f"eq.{session_id}", "status": "eq.completed", "select": "id,anonymous_device_id,completed_at", "order": "completed_at.desc"},
+            )
+            if attempt_status >= 400:
+                raise HTTPException(status_code=502, detail="无法读取课后练习统计")
+            completed_attempt_count = len(attempts)
+            latest_attempt_ids: list[str] = []
+            latest_devices: set[str] = set()
+            for attempt in attempts:
+                device_id = attempt.get("anonymous_device_id")
+                if device_id and device_id not in latest_devices:
+                    latest_devices.add(device_id)
+                    latest_attempt_ids.append(attempt["id"])
+            if latest_attempt_ids:
+                answer_status, answers = await supabase_request(
+                    request,
+                    "GET",
+                    "/rest/v1/answers",
+                    service_role=True,
+                    params={"session_id": f"eq.{session_id}", "question_id": f"in.({','.join(question_ids)})", "practice_attempt_id": f"in.({','.join(latest_attempt_ids)})", "select": "question_id,selected_option_id,is_correct,practice_attempt_id"},
+                )
+            else:
+                answer_status = 200
+        else:
+            answer_status, answers = await supabase_request(
+                request,
+                "GET",
+                "/rest/v1/answers",
+                service_role=True,
+                params={"session_id": f"eq.{session_id}", "question_id": f"in.({','.join(question_ids)})", "practice_attempt_id": "is.null", "select": "question_id,selected_option_id,is_correct"},
+            )
         option_status, options = await supabase_request(
             request,
             "GET",
@@ -1174,19 +1213,16 @@ async def session_report(
         )
         if answer_status >= 400 or option_status >= 400:
             raise HTTPException(status_code=502, detail="无法读取统计")
-    
     options_by_id = {option["id"]: option for option in options}
     report_questions: list[dict[str, Any]] = []
     for question in questions:
         question_answers = [answer for answer in answers if answer["question_id"] == question["id"]]
         distribution = {"A": 0, "B": 0, "C": 0, "D": 0}
         for answer in question_answers:
-            if answer.get("selected_option_id"):
-                key = options_by_id.get(answer["selected_option_id"], {}).get("option_key")
-                if key in distribution:
-                    distribution[key] += 1
+            key = options_by_id.get(answer["selected_option_id"], {}).get("option_key")
+            if key in distribution:
+                distribution[key] += 1
         correct_count = sum(1 for answer in question_answers if answer.get("is_correct") is True)
-        text_input_count = sum(1 for answer in question_answers if answer.get("answer_type") == "text_input")
         report_questions.append({
             "id": question["id"],
             "sort_order": question["sort_order"],
@@ -1196,23 +1232,271 @@ async def session_report(
             "correct_option_key": options_by_id.get(question.get("correct_option_id"), {}).get("option_key"),
             "submitted_count": len(question_answers),
             "correct_count": correct_count,
-            "text_input_count": text_input_count,
             "accuracy": round(correct_count / len(question_answers) * 100, 1) if question_answers else 0,
             "distribution": distribution,
         })
-    
     participant_status, participants = await supabase_request(
         request,
         "GET",
-        "/rest/v1/session_students",
+        "/rest/v1/session_participants",
         service_role=True,
         params={"session_id": f"eq.{session_id}", "select": "id"},
     )
     if participant_status >= 400:
         raise HTTPException(status_code=502, detail="无法读取课堂人数")
-    
-    participant_count = len(participants)
-    return {"session": session, "participant_count": participant_count, "total_submitted_count": len(answers), "questions": report_questions}
+    participant_count = len(participants) if session.get("session_type") != "homework" else len({answer.get("practice_attempt_id") for answer in answers if answer.get("practice_attempt_id")})
+    return {"session": session, "participant_count": participant_count, "completed_attempt_count": completed_attempt_count, "total_submitted_count": len(answers), "questions": report_questions}
+
+
+@app.get("/api/public/practice/{access_token}")
+async def public_practice(access_token: str, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    if session["session_type"] != "homework":
+        raise HTTPException(status_code=422, detail="这不是课后练习码")
+    if session["status"] != "active":
+        raise HTTPException(status_code=410, detail="练习已结束")
+    questions = await session_questions(request, session["question_set_id"])
+    payload_questions = []
+    for question in questions:
+        payload_questions.append(public_question(question, await question_options(request, question["id"])))
+    return {
+        "id": session["id"],
+        "session_type": "homework",
+        "status": session["status"],
+        "expires_at": session.get("expires_at"),
+        "question_count": len(payload_questions),
+        "questions": payload_questions,
+    }
+
+
+@app.post("/api/public/practice/{access_token}/start")
+async def start_public_practice(access_token: str, payload: PracticeStartRequest, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    if session["session_type"] != "homework" or session["status"] != "active":
+        raise HTTPException(status_code=410, detail="练习已结束")
+    device_id = await ensure_anonymous_device(request, payload.browser_key)
+    await join_anonymous_session(request, session["id"], device_id)
+
+    draft_status, drafts = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/practice_attempts",
+        service_role=True,
+        params={"session_id": f"eq.{session['id']}", "anonymous_device_id": f"eq.{device_id}", "status": "eq.draft", "select": "id"},
+    )
+    if draft_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取未完成练习")
+    # 首版不支持续做，开始新练习时清理同一设备留下的未完成轮次。
+    for draft in drafts:
+        await supabase_request(
+            request,
+            "DELETE",
+            "/rest/v1/answers",
+            service_role=True,
+            params={"practice_attempt_id": f"eq.{draft['id']}"},
+        )
+        await supabase_request(
+            request,
+            "DELETE",
+            "/rest/v1/practice_attempts",
+            service_role=True,
+            params={"id": f"eq.{draft['id']}"},
+        )
+    create_status, attempts = await supabase_request(
+        request,
+        "POST",
+        "/rest/v1/practice_attempts",
+        service_role=True,
+        prefer_representation=True,
+        body={"session_id": session["id"], "anonymous_device_id": device_id, "status": "draft"},
+    )
+    if create_status >= 400 or not attempts:
+        raise HTTPException(status_code=502, detail="无法开始练习")
+    return {"attempt_id": attempts[0]["id"], "session_id": session["id"]}
+
+
+@app.post("/api/public/practice/{access_token}/answers")
+async def submit_practice_answer(access_token: str, payload: PracticeAnswerRequest, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    if session["session_type"] != "homework" or session["status"] != "active":
+        raise HTTPException(status_code=410, detail="练习已结束")
+    device_id = await ensure_anonymous_device(request, payload.browser_key)
+    attempt_status, attempts = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/practice_attempts",
+        service_role=True,
+        params={"id": f"eq.{payload.attempt_id}", "session_id": f"eq.{session['id']}", "anonymous_device_id": f"eq.{device_id}", "status": "eq.draft", "select": "id"},
+    )
+    if attempt_status >= 400 or not attempts:
+        raise HTTPException(status_code=409, detail="练习轮次已失效，请重新输入练习码")
+    existing_status, existing = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/answers",
+        service_role=True,
+        params={"practice_attempt_id": f"eq.{payload.attempt_id}", "question_id": f"eq.{payload.question_id}", "select": "id"},
+    )
+    if existing_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取已有答案")
+    body = {"session_id": session["id"], "question_id": payload.question_id, "selected_option_id": payload.selected_option_id, "practice_attempt_id": payload.attempt_id}
+    if existing:
+        write_status, _ = await supabase_request(request, "PATCH", "/rest/v1/answers", service_role=True, prefer_representation=True, params={"id": f"eq.{existing[0]['id']}"}, body={"selected_option_id": payload.selected_option_id})
+    else:
+        write_status, _ = await supabase_request(request, "POST", "/rest/v1/answers", service_role=True, prefer_representation=True, body=body)
+    if write_status >= 400:
+        raise HTTPException(status_code=409, detail="答案提交失败，请重新尝试")
+    return {"submitted": True, "question_id": payload.question_id}
+
+
+@app.post("/api/public/practice/{access_token}/complete")
+async def complete_public_practice(access_token: str, payload: PracticeCompleteRequest, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    if session["session_type"] != "homework" or session["status"] != "active":
+        raise HTTPException(status_code=410, detail="练习已结束")
+    device_id = await ensure_anonymous_device(request, payload.browser_key)
+    attempt_status, attempts = await supabase_request(request, "GET", "/rest/v1/practice_attempts", service_role=True, params={"id": f"eq.{payload.attempt_id}", "session_id": f"eq.{session['id']}", "anonymous_device_id": f"eq.{device_id}", "status": "eq.draft", "select": "id"})
+    if attempt_status >= 400 or not attempts:
+        raise HTTPException(status_code=409, detail="练习轮次已失效，请重新输入练习码")
+    update_status, updated = await supabase_request(request, "PATCH", "/rest/v1/practice_attempts", service_role=True, prefer_representation=True, params={"id": f"eq.{payload.attempt_id}"}, body={"status": "completed", "completed_at": utc_now().isoformat()})
+    if update_status >= 400 or not updated:
+        message = updated.get("message", "练习尚未完成，请完成全部题目") if isinstance(updated, dict) else "练习尚未完成，请完成全部题目"
+        raise HTTPException(status_code=409, detail=message)
+    answer_status, answers = await supabase_request(request, "GET", "/rest/v1/answers", service_role=True, params={"practice_attempt_id": f"eq.{payload.attempt_id}", "select": "question_id,selected_option_id,is_correct"})
+    if answer_status >= 400:
+        raise HTTPException(status_code=502, detail="练习已完成，但结果读取失败")
+    return {"completed": True, "attempt_id": payload.attempt_id, "answers": answers}
+
+
+@app.get("/api/public/sessions/{access_token}")
+async def public_session(access_token: str, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    session = await advance_expired_session(request, session)
+    participant_status, participants = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/session_participants",
+        service_role=True,
+        params={"session_id": f"eq.{session['id']}", "select": "id"},
+    )
+    if participant_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取课堂人数")
+    question = None
+    options: list[dict[str, Any]] = []
+    if session["status"] == "active" and session.get("current_question_id"):
+        questions = await session_questions(request, session["question_set_id"])
+        question = next((item for item in questions if item["id"] == session["current_question_id"]), None)
+        if question:
+            options = await question_options(request, question["id"])
+    return session_public_payload(session, question, options, len(participants))
+
+
+@app.post("/api/public/sessions/{access_token}/join")
+async def join_public_session(access_token: str, payload: JoinRequest, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    device_hash = browser_key_hash(payload.browser_key)
+    device_status, devices = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/anonymous_devices",
+        service_role=True,
+        params={"browser_key_hash": f"eq.{device_hash}", "select": "id"},
+    )
+    if device_status >= 400:
+        raise HTTPException(status_code=502, detail="无法建立匿名设备")
+    if devices:
+        device_id = devices[0]["id"]
+    else:
+        create_status, created = await supabase_request(
+            request,
+            "POST",
+            "/rest/v1/anonymous_devices",
+            service_role=True,
+            prefer_representation=True,
+            body={"browser_key_hash": device_hash},
+        )
+        if create_status >= 400 or not created:
+            raise HTTPException(status_code=502, detail="无法建立匿名设备")
+        device_id = created[0]["id"]
+    participant_status, participants = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/session_participants",
+        service_role=True,
+        params={"session_id": f"eq.{session['id']}", "anonymous_device_id": f"eq.{device_id}", "select": "id"},
+    )
+    if participant_status >= 400:
+        raise HTTPException(status_code=502, detail="无法加入课堂")
+    if not participants:
+        join_status, _ = await supabase_request(
+            request,
+            "POST",
+            "/rest/v1/session_participants",
+            service_role=True,
+            prefer_representation=True,
+            body={"session_id": session["id"], "anonymous_device_id": device_id},
+        )
+        if join_status >= 400:
+            raise HTTPException(status_code=502, detail="无法加入课堂")
+    count_status, count_rows = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/session_participants",
+        service_role=True,
+        params={"session_id": f"eq.{session['id']}", "select": "id"},
+    )
+    return {"joined": True, "session_id": session["id"], "status": session["status"], "participant_count": len(count_rows) if count_status < 400 else 0}
+
+
+@app.post("/api/public/sessions/{access_token}/answers")
+async def submit_public_answer(access_token: str, payload: AnswerRequest, request: Request) -> dict[str, Any]:
+    session = await find_session_by_token(request, access_token)
+    session = await advance_expired_session(request, session)
+    if session.get("session_type") != "classroom" or session.get("status") != "active" or session.get("current_question_status") != "open":
+        raise HTTPException(status_code=409, detail="当前题目已结束，答案未提交")
+    if session.get("current_question_id") != payload.question_id:
+        raise HTTPException(status_code=409, detail="当前题目已切换，答案未提交")
+    device_hash = browser_key_hash(payload.browser_key)
+    device_status, devices = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/anonymous_devices",
+        service_role=True,
+        params={"browser_key_hash": f"eq.{device_hash}", "select": "id"},
+    )
+    if device_status >= 400 or not devices:
+        raise HTTPException(status_code=403, detail="请先加入课堂")
+    device_id = devices[0]["id"]
+    existing_status, existing = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/answers",
+        service_role=True,
+        params={"session_id": f"eq.{session['id']}", "question_id": f"eq.{payload.question_id}", "anonymous_device_id": f"eq.{device_id}", "practice_attempt_id": "is.null", "select": "id"},
+    )
+    if existing_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取已有答案")
+    answer_body = {"session_id": session["id"], "question_id": payload.question_id, "selected_option_id": payload.selected_option_id, "anonymous_device_id": device_id}
+    if existing:
+        write_method = "PATCH"
+        write_path = "/rest/v1/answers"
+        write_params = {"id": f"eq.{existing[0]['id']}"}
+    else:
+        write_method = "POST"
+        write_path = "/rest/v1/answers"
+        write_params = None
+    write_status, _ = await supabase_request(
+        request,
+        write_method,
+        write_path,
+        service_role=True,
+        prefer_representation=True,
+        params=write_params,
+        body=answer_body,
+    )
+    if write_status >= 400:
+        raise HTTPException(status_code=409, detail="当前题目不能提交答案，请确认课堂仍在进行")
+    return {"submitted": True, "question_id": payload.question_id}
 
 
 async def student_question_set(request: Request, question_set_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -1234,18 +1518,7 @@ async def student_grades(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="需要學生登錄")
-    
-    token = authorization[7:]
-    try:
-        payload = decode_jwt(token)
-    except HTTPException:
-        raise
-    
-    if payload.get("role") != "student":
-        raise HTTPException(status_code=401, detail="無效的令牌")
-    
+    verify_student_token(request, authorization)
     status, grades = await supabase_request(
         request,
         "GET",
@@ -1269,6 +1542,200 @@ async def student_grades(
         if item.get("grade_id"):
             counts[item["grade_id"]] = counts.get(item["grade_id"], 0) + 1
     return [{**grade, "question_set_count": counts.get(grade["id"], 0)} for grade in grades]
+
+
+@app.get("/api/student/question-sets")
+async def student_question_sets(
+    request: Request,
+    grade_id: str | None = None,
+    authorization: str | None = Header(default=None),
+) -> list[dict[str, Any]]:
+    verify_student_token(request, authorization)
+    params = {
+        "status": "eq.published",
+        "select": "id,name,grade_id,created_at,questions(count)",
+        "order": "created_at.desc",
+    }
+    if grade_id:
+        params["grade_id"] = f"eq.{grade_id}"
+    status, sets = await supabase_request(request, "GET", "/rest/v1/question_sets", service_role=True, params=params)
+    if status >= 400:
+        raise HTTPException(status_code=502, detail="無法讀取題目集合")
+    result = []
+    for item in sets:
+        counts = item.pop("questions", [{"count": 0}])
+        result.append({**item, "question_count": (counts[0] or {}).get("count", 0)})
+    return result
+
+
+@app.get("/api/student/question-sets/{question_set_id}")
+async def student_question_set_detail(
+    question_set_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    verify_student_token(request, authorization)
+    question_set, questions = await student_question_set(request, question_set_id)
+    return {
+        **question_set,
+        "questions": [public_question(question, await question_options(request, question["id"])) for question in questions],
+    }
+
+
+@app.post("/api/student/question-sets/{question_set_id}/start")
+async def start_student_practice(
+    question_set_id: str,
+    payload: StudentPracticeStartRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    verify_student_token(request, authorization)
+    await student_question_set(request, question_set_id)
+    device_id = await ensure_anonymous_device(request, payload.browser_key)
+    status, created = await supabase_request(
+        request,
+        "POST",
+        "/rest/v1/student_practice_attempts",
+        service_role=True,
+        prefer_representation=True,
+        body={"question_set_id": question_set_id, "anonymous_device_id": device_id},
+    )
+    if status >= 400 or not created:
+        raise HTTPException(status_code=502, detail="無法開始練習")
+    return {"attempt_id": created[0]["id"]}
+
+
+@app.post("/api/student/question-sets/{question_set_id}/answers")
+async def answer_student_practice(
+    question_set_id: str,
+    payload: StudentPracticeAnswerRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    verify_student_token(request, authorization)
+    await student_question_set(request, question_set_id)
+    device_id = await ensure_anonymous_device(request, payload.browser_key)
+    attempt_status, attempts = await supabase_request(request, "GET", "/rest/v1/student_practice_attempts", service_role=True, params={"id": f"eq.{payload.attempt_id}", "question_set_id": f"eq.{question_set_id}", "anonymous_device_id": f"eq.{device_id}", "select": "id"})
+    if attempt_status >= 400 or not attempts:
+        raise HTTPException(status_code=409, detail="練習輪次已失效")
+    q_status, questions = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params={"id": f"eq.{payload.question_id}", "question_set_id": f"eq.{question_set_id}", "select": "id,correct_option_id"})
+    if q_status >= 400 or not questions:
+        raise HTTPException(status_code=404, detail="找不到題目")
+    is_correct = questions[0].get("correct_option_id") == payload.selected_option_id
+    existing_status, existing = await supabase_request(request, "GET", "/rest/v1/student_practice_answers", service_role=True, params={"attempt_id": f"eq.{payload.attempt_id}", "question_id": f"eq.{payload.question_id}", "select": "id"})
+    body = {"attempt_id": payload.attempt_id, "question_id": payload.question_id, "selected_option_id": payload.selected_option_id, "is_correct": is_correct}
+    if existing_status >= 400:
+        raise HTTPException(status_code=502, detail="無法讀取作答")
+    if existing:
+        write_status, _ = await supabase_request(request, "PATCH", "/rest/v1/student_practice_answers", service_role=True, prefer_representation=True, params={"id": f"eq.{existing[0]['id']}"}, body=body)
+    else:
+        write_status, _ = await supabase_request(request, "POST", "/rest/v1/student_practice_answers", service_role=True, prefer_representation=True, body=body)
+    if write_status >= 400:
+        raise HTTPException(status_code=409, detail="答案提交失敗")
+    return {"submitted": True, "is_correct": is_correct}
+
+
+@app.post("/api/student/question-sets/{question_set_id}/complete")
+async def complete_student_practice(
+    question_set_id: str,
+    payload: StudentPracticeCompleteRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    verify_student_token(request, authorization)
+    await student_question_set(request, question_set_id)
+    device_id = await ensure_anonymous_device(request, payload.browser_key)
+    status, updated = await supabase_request(request, "PATCH", "/rest/v1/student_practice_attempts", service_role=True, prefer_representation=True, params={"id": f"eq.{payload.attempt_id}", "question_set_id": f"eq.{question_set_id}", "anonymous_device_id": f"eq.{device_id}"}, body={"completed_at": utc_now().isoformat()})
+    if status >= 400 or not updated:
+        raise HTTPException(status_code=409, detail="練習完成狀態更新失敗")
+    answer_status, answers = await supabase_request(request, "GET", "/rest/v1/student_practice_answers", service_role=True, params={"attempt_id": f"eq.{payload.attempt_id}", "select": "question_id,is_correct,selected_option_id"})
+    if answer_status >= 400:
+        raise HTTPException(status_code=502, detail="結果讀取失敗")
+    return {"completed": True, "answers": answers}
+
+
+REVIEW_INTERVAL_DAYS = [0, 1, 3, 7, 14, 30, 60]
+
+
+@app.get("/api/student/review")
+async def get_student_review(
+    request: Request,
+    grade_id: str | None = None,
+    browser_key: str = "",
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    verify_student_token(request, authorization)
+    if len(browser_key) < 16:
+        raise HTTPException(status_code=422, detail="匿名設備識別碼無效")
+    device_id = await ensure_anonymous_device(request, browser_key)
+    params = {"status": "eq.published", "select": "id", "order": "created_at.desc"}
+    if grade_id:
+        params["grade_id"] = f"eq.{grade_id}"
+    set_status, sets = await supabase_request(request, "GET", "/rest/v1/question_sets", service_role=True, params=params)
+    if set_status >= 400:
+        raise HTTPException(status_code=502, detail="無法讀取複習題目")
+    set_ids = [item["id"] for item in sets]
+    if not set_ids:
+        return {"questions": []}
+    q_status, questions = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params={"question_set_id": f"in.({','.join(set_ids)})", "select": "id,question_set_id,sort_order,question_text,question_image_url,explanation,question_type,content_type,language,correct_option_id", "order": "sort_order.asc"})
+    if q_status >= 400:
+        raise HTTPException(status_code=502, detail="無法讀取複習題目")
+    p_status, progress = await supabase_request(request, "GET", "/rest/v1/review_progress", service_role=True, params={"anonymous_device_id": f"eq.{device_id}", "select": "question_id,interval_level,due_at,last_rating,review_count"})
+    if p_status >= 400:
+        raise HTTPException(status_code=502, detail="無法讀取複習進度")
+    progress_by_question = {item["question_id"]: item for item in progress}
+    now = utc_now()
+    due = [question for question in questions if not progress_by_question.get(question["id"]) or datetime.fromisoformat(progress_by_question[question["id"]]["due_at"].replace("Z", "+00:00")) <= now]
+    due.sort(key=lambda item: progress_by_question.get(item["id"], {}).get("due_at", ""))
+    return {"questions": [{**public_question(question, await question_options(request, question["id"])), "review": progress_by_question.get(question["id"], {"interval_level": 0, "last_rating": None, "review_count": 0})} for question in due[:20]]}
+
+
+@app.post("/api/student/review/answer")
+async def answer_student_review(
+    payload: ReviewAnswerRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    verify_student_token(request, authorization)
+    device_id = await ensure_anonymous_device(request, payload.browser_key)
+    q_status, questions = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params={"id": f"eq.{payload.question_id}", "select": "id,correct_option_id,explanation"})
+    if q_status >= 400 or not questions:
+        raise HTTPException(status_code=404, detail="找不到題目")
+    is_correct = questions[0].get("correct_option_id") == payload.selected_option_id
+    p_status, progress = await supabase_request(request, "GET", "/rest/v1/review_progress", service_role=True, params={"anonymous_device_id": f"eq.{device_id}", "question_id": f"eq.{payload.question_id}", "select": "id,interval_level,review_count"})
+    if p_status >= 400:
+        raise HTTPException(status_code=502, detail="無法讀取複習進度")
+    previous_level = int(progress[0].get("interval_level", 0)) if progress else 0
+    if payload.rating == "forgot":
+        level = 0
+        due_at = utc_now() + timedelta(minutes=10)
+    elif payload.rating == "fuzzy":
+        level = max(1, min(previous_level, 5))
+        due_at = utc_now() + timedelta(days=REVIEW_INTERVAL_DAYS[level])
+    else:
+        level = min(previous_level + 1, 6)
+        due_at = utc_now() + timedelta(days=REVIEW_INTERVAL_DAYS[level])
+    body = {"anonymous_device_id": device_id, "question_id": payload.question_id, "interval_level": level, "due_at": due_at.isoformat(), "last_rating": payload.rating, "review_count": (int(progress[0].get("review_count", 0)) + 1 if progress else 1), "last_selected_option_id": payload.selected_option_id, "last_is_correct": is_correct}
+    if progress:
+        write_status, _ = await supabase_request(request, "PATCH", "/rest/v1/review_progress", service_role=True, prefer_representation=True, params={"id": f"eq.{progress[0]['id']}"}, body=body)
+    else:
+        write_status, _ = await supabase_request(request, "POST", "/rest/v1/review_progress", service_role=True, prefer_representation=True, body=body)
+    if write_status >= 400:
+        raise HTTPException(status_code=502, detail="複習進度儲存失敗")
+    return {"submitted": True, "is_correct": is_correct, "correct_option_id": questions[0].get("correct_option_id"), "explanation": questions[0].get("explanation"), "next_due_at": due_at.isoformat()}
+
+
+@app.post("/api/student/review/check")
+async def check_student_review_answer(
+    payload: ReviewAnswerRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    verify_student_token(request, authorization)
+    status, questions = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params={"id": f"eq.{payload.question_id}", "select": "id,correct_option_id,explanation"})
+    if status >= 400 or not questions:
+        raise HTTPException(status_code=404, detail="找不到題目")
+    return {"is_correct": questions[0].get("correct_option_id") == payload.selected_option_id, "correct_option_id": questions[0].get("correct_option_id"), "explanation": questions[0].get("explanation")}
 
 
 Default = asgi.entrypoint(app)

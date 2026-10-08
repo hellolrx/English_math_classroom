@@ -1,33 +1,37 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getTopicQuestions, getPracticeProgress, submitPracticeAnswer } from '../api/client'
+import { completePublicPractice, getPublicPractice, startPublicPractice, submitPracticeAnswer } from '../api/client'
 
 const route = useRoute()
 const router = useRouter()
-const topicId = route.params.code
-const questions = ref([])
-const progress = ref(null)
+const code = route.params.code
+const practice = ref(null)
+const attemptId = ref('')
 const index = ref(0)
 const selected = ref('')
-const answerText = ref('')
 const loading = ref(true)
 const submitting = ref(false)
 const errorMessage = ref('')
-const answeredCount = ref(0)
-const currentResult = ref(null)
+const result = ref(null)
 
-const question = computed(() => questions.value[index.value] || null)
-const isLast = computed(() => Boolean(questions.value.length && index.value === questions.value.length - 1))
+const browserKey = (() => {
+  const key = localStorage.getItem('hhx_browser_key')
+  if (key) return key
+  const next = crypto.randomUUID()
+  localStorage.setItem('hhx_browser_key', next)
+  return next
+})()
+
+const question = computed(() => practice.value?.questions?.[index.value] || null)
+const isLast = computed(() => Boolean(practice.value && index.value === practice.value.questions.length - 1))
+const answeredCount = computed(() => result.value?.answers?.length || index.value + (selected.value ? 1 : 0))
 
 async function load() {
   try {
-    questions.value = await getTopicQuestions(topicId)
-    progress.value = await getPracticeProgress(topicId)
-    if (progress.value?.current_question_order) {
-      index.value = Math.max(0, progress.value.current_question_order - 1)
-    }
-    answeredCount.value = progress.value?.answered_count || 0
+    practice.value = await getPublicPractice(code)
+    const started = await startPublicPractice(code, browserKey)
+    attemptId.value = started.attempt_id
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -36,18 +40,17 @@ async function load() {
 }
 
 async function choose(option) {
-  if (!question.value || submitting.value || selected.value === option.option_key) return
+  if (!question.value || submitting.value || selected.value === option.id) return
   submitting.value = true
   errorMessage.value = ''
   try {
-    const result = await submitPracticeAnswer(topicId, {
+    await submitPracticeAnswer(code, {
+      browser_key: browserKey,
+      attempt_id: attemptId.value,
       question_id: question.value.id,
-      answer_type: 'single_choice',
-      selected_option_id: option.option_key,
+      selected_option_id: option.id,
     })
-    selected.value = option.option_key
-    currentResult.value = result
-    answeredCount.value += 1
+    selected.value = option.id
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -55,47 +58,26 @@ async function choose(option) {
   }
 }
 
-async function submitTextAnswer() {
-  if (!question.value || submitting.value || !answerText.value.trim()) return
+async function next() {
+  if (!selected.value || submitting.value) return
   submitting.value = true
   errorMessage.value = ''
   try {
-    await submitPracticeAnswer(topicId, {
-      question_id: question.value.id,
-      answer_type: 'text_input',
-      answer_text: answerText.value.trim(),
-    })
-    currentResult.value = { submitted: true }
-    answeredCount.value += 1
-    answerText.value = ''
+    if (isLast.value) {
+      result.value = await completePublicPractice(code, { browser_key: browserKey, attempt_id: attemptId.value })
+    } else {
+      index.value += 1
+      selected.value = ''
+    }
   } catch (error) {
     errorMessage.value = error.message
   } finally {
     submitting.value = false
-  }
-}
-
-function next() {
-  if (!selected.value && !currentResult.value?.submitted) return
-  if (isLast.value) {
-    router.push('/student')
-  } else {
-    index.value += 1
-    selected.value = ''
-    currentResult.value = null
-  }
-}
-
-function previous() {
-  if (index.value > 0) {
-    index.value -= 1
-    selected.value = ''
-    currentResult.value = null
   }
 }
 
 function restart() {
-  router.push('/student')
+  router.replace('/student/join')
 }
 
 onMounted(load)
@@ -104,71 +86,37 @@ onMounted(load)
 <template>
   <main class="auth-shell">
     <section class="auth-card student-card student-session-card">
-      <div class="brand-mark student-mark">練</div>
+      <div class="brand-mark student-mark">答</div>
       <p class="eyebrow">ENGLISH MATH CLASSROOM</p>
       <h1>課後練習</h1>
 
       <p v-if="loading" class="loading-state">正在載入練習…</p>
       <p v-else-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
-      <template v-else-if="question">
-        <div class="practice-progress">
-          <span>第 {{ index + 1 }} / {{ questions.length }} 題</span>
-          <span>已作答 {{ answeredCount }} 題</span>
-        </div>
-        
-        <!-- Single choice question -->
-        <template v-if="question.question_type === 'single_choice' || !question.question_type">
-          <img v-if="question.question_image_url" class="question-image" :src="question.question_image_url" alt="題目圖片" />
-          <h2 v-if="question.question_text" class="student-question">{{ question.question_text }}</h2>
-          <div class="student-options">
-            <button 
-              v-for="option in question.options" 
-              :key="option.option_key" 
-              :class="{ selected: selected === option.option_key }" 
-              :disabled="submitting" 
-              @click="choose(option)"
-            >
-              <strong>{{ option.option_key }}.</strong>
-              <img v-if="option.option_image_url" class="option-image" :src="option.option_image_url" alt="選項圖片" />
-              <template v-else>{{ option.option_text }}</template>
-            </button>
-          </div>
-        </template>
-        
-        <!-- Text input question -->
-        <template v-else-if="question.question_type === 'text_input'">
-          <img v-if="question.question_image_url" class="question-image" :src="question.question_image_url" alt="題目圖片" />
-          <h2 v-if="question.question_text" class="student-question">{{ question.question_text }}</h2>
-          <div class="text-input-area">
-            <textarea 
-              v-model="answerText" 
-              placeholder="請輸入你的答案" 
-              :disabled="submitting"
-              rows="4"
-            ></textarea>
-            <button class="primary-button" :disabled="submitting || !answerText.trim()" @click="submitTextAnswer">
-              {{ submitting ? '提交中…' : '提交答案' }}
-            </button>
-          </div>
-        </template>
-        
-        <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
-        <p :class="currentResult?.submitted ? 'success-message' : 'pending-message'">
-          {{ currentResult?.submitted ? (currentResult?.is_correct === false ? '答錯了' : (currentResult?.is_correct === true ? '答對了' : '答案已提交')) : '請選擇答案' }}
-        </p>
-        <div class="practice-navigation">
-          <button class="secondary-button" :disabled="index === 0" @click="previous">上一題</button>
-          <button class="primary-button" :disabled="!currentResult?.submitted" @click="next">
-            {{ isLast ? '完成練習' : '下一題' }}
-          </button>
-        </div>
-      </template>
-      <template v-else>
+      <template v-else-if="result">
         <div class="completion-message">
           <h2>練習已完成</h2>
-          <p>你已完成全部 {{ questions.length }} 題。</p>
+          <p>你已完成全部 {{ practice.questions.length }} 題，可以查看本次結果。</p>
         </div>
-        <button class="secondary-button practice-back-button" @click="restart">返回學生工作台</button>
+        <div class="practice-result-list">
+          <div v-for="(answer, answerIndex) in result.answers" :key="answer.question_id" class="practice-result-row">
+            <span>第 {{ answerIndex + 1 }} 題</span>
+            <strong :class="answer.is_correct ? 'result-correct' : 'result-wrong'">{{ answer.is_correct ? '答對' : '答錯' }}</strong>
+          </div>
+        </div>
+        <button class="secondary-button practice-back-button" @click="restart">返回學生入口</button>
+      </template>
+      <template v-else-if="question">
+        <div class="practice-progress"><span>第 {{ index + 1 }} / {{ practice.questions.length }} 題</span><span>已作答 {{ answeredCount }} 題</span></div>
+        <img v-if="question.question_image_url" class="question-image" :src="question.question_image_url" alt="題目圖片" />
+        <h2 v-if="question.question_text" class="student-question">{{ question.question_text }}</h2>
+        <div class="student-options">
+          <button v-for="option in question.options" :key="option.id" :class="{ selected: selected === option.id }" :disabled="submitting" @click="choose(option)">
+            <strong>{{ option.option_key }}.</strong><img v-if="option.option_image_url" class="option-image" :src="option.option_image_url" alt="選項圖片" /><template v-else>{{ option.option_text }}</template>
+          </button>
+        </div>
+        <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+        <p :class="selected ? 'success-message' : 'pending-message'">{{ selected ? '答案已提交' : '請選擇答案' }}</p>
+        <button class="primary-button practice-next-button" :disabled="!selected || submitting" @click="next">{{ submitting ? '處理中…' : (isLast ? '完成練習' : '下一題') }}</button>
       </template>
     </section>
   </main>
