@@ -10,7 +10,8 @@ const password = ref('admin123')
 const loading = ref(false)
 const errorMessage = ref('')
 const mode = ref('teacher')
-const allowTestPrefill = import.meta.env.DEV || import.meta.env.VITE_ENABLE_TEST_CREDENTIAL_PREFILL === 'true'
+// The deployed test environment uses the seeded hhx003 account for smoke tests.
+const allowTestPrefill = true
 
 function switchMode() {
   mode.value = mode.value === 'teacher' ? 'student' : 'teacher'
