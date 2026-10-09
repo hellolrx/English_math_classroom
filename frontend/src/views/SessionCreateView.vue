@@ -1,14 +1,170 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import QRCode from 'qrcode'
-import { createSession, getClasses, getTeacherTopics } from '../api/client'
+import {
+  createSession,
+  getClasses,
+  getTeacherClassroomStats,
+  getTeacherTopics,
+  startTeacherClassroom,
+} from '../api/client'
 
-const classes = ref([]); const topics = ref([]); const selectedGrade = ref(''); const selectedClass = ref(''); const selectedBatch = ref(''); const sessionType = ref('classroom'); const timeLimitSeconds = ref(30); const created = ref(null); const qr = ref(''); const loading = ref(true); const saving = ref(false); const error = ref('')
+const router = useRouter()
+const classes = ref([])
+const topics = ref([])
+const selectedGrade = ref('')
+const selectedClass = ref('')
+const selectedBatch = ref('')
+const sessionType = ref('classroom')
+const timeLimitSeconds = ref(30)
+const created = ref(null)
+const participantCount = ref(0)
+const qr = ref('')
+const loading = ref(true)
+const saving = ref(false)
+const error = ref('')
+let participantTimer
+
 const grades = computed(() => [...new Map(classes.value.map(item => [item.grade_id, item.grades || { name: item.grade_id }])).entries()].map(([id, data]) => ({ id, ...data })))
 const filteredClasses = computed(() => classes.value.filter(item => item.grade_id === selectedGrade.value))
 const publishedTopics = computed(() => topics.value.filter(item => item.batch_id))
-function chooseGrade(id) { selectedGrade.value = id; selectedClass.value = filteredClasses.value[0]?.id || '' }
-onMounted(async () => { try { const [classRows, topicRows] = await Promise.all([getClasses(), getTeacherTopics()]); classes.value = classRows; topics.value = topicRows; selectedGrade.value = grades.value[0]?.id || ''; selectedClass.value = filteredClasses.value[0]?.id || ''; selectedBatch.value = publishedTopics.value[0]?.batch_id || '' } catch (e) { error.value = e.message } finally { loading.value = false } })
-async function submit() { saving.value = true; error.value = ''; try { created.value = await createSession({ batch_id: selectedBatch.value, class_id: selectedClass.value, session_type: sessionType.value, time_limit_seconds: sessionType.value === 'classroom' ? timeLimitSeconds.value : 0 }); if (created.value.join_url) qr.value = await QRCode.toDataURL(created.value.join_url, { width: 360, margin: 3 }) } catch (e) { error.value = e.message } finally { saving.value = false } }
+
+function chooseGrade(id) {
+  selectedGrade.value = id
+  selectedClass.value = filteredClasses.value[0]?.id || ''
+}
+
+function stopParticipantPolling() {
+  if (participantTimer) clearInterval(participantTimer)
+  participantTimer = null
+}
+
+async function refreshParticipantCount() {
+  if (!created.value || created.value.practice_code) return
+  try {
+    const state = await getTeacherClassroomStats(created.value.id)
+    participantCount.value = state.participant_count || 0
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+async function submit() {
+  saving.value = true
+  error.value = ''
+  stopParticipantPolling()
+  try {
+    created.value = await createSession({
+      batch_id: selectedBatch.value,
+      class_id: selectedClass.value,
+      session_type: sessionType.value,
+      time_limit_seconds: sessionType.value === 'classroom' ? timeLimitSeconds.value : 0,
+    })
+    if (created.value.join_url) {
+      qr.value = await QRCode.toDataURL(created.value.join_url, { width: 360, margin: 3 })
+    }
+    if (!created.value.practice_code) {
+      await refreshParticipantCount()
+      participantTimer = setInterval(refreshParticipantCount, 2000)
+    }
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    saving.value = false
+  }
+}
+
+async function startClassroom() {
+  if (!created.value) return
+  saving.value = true
+  error.value = ''
+  try {
+    await startTeacherClassroom(created.value.id)
+    stopParticipantPolling()
+    await router.push(`/teacher/sessions/${created.value.id}`)
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    saving.value = false
+  }
+}
+
+onMounted(async () => {
+  try {
+    const [classRows, topicRows] = await Promise.all([getClasses(), getTeacherTopics()])
+    classes.value = classRows
+    topics.value = topicRows
+    selectedGrade.value = grades.value[0]?.id || ''
+    selectedClass.value = filteredClasses.value[0]?.id || ''
+    selectedBatch.value = publishedTopics.value[0]?.batch_id || ''
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+})
+
+onUnmounted(stopParticipantPolling)
 </script>
-<template><main class="app-shell"><header class="topbar"><div><RouterLink class="back-link-inline" to="/teacher">← 返回老师工作台</RouterLink><p class="eyebrow">SESSION BUILDER</p><h1>建立课堂或练习</h1><p class="muted">练习码针对整份主题题库，课堂允许所有已登录学生扫码加入。</p></div></header><p v-if="loading" class="loading-state">正在读取资料…</p><p v-else-if="error && !created" class="error-message">{{ error }}</p><section v-else class="detail-panel session-create-panel"><div class="selection-block"><h2>使用方式</h2><div class="choice-grid"><button class="choice-card" :class="{ active: sessionType === 'classroom' }" @click="sessionType = 'classroom'">数学课堂</button><button class="choice-card" :class="{ active: sessionType === 'homework' }" @click="sessionType = 'homework'">课后练习</button></div></div><div class="selection-block"><h2>年级与班级</h2><div class="choice-grid grade-grid"><button v-for="grade in grades" :key="grade.id" class="choice-card" :class="{ active: selectedGrade === grade.id }" @click="chooseGrade(grade.id)">{{ grade.name }}</button></div><div class="choice-grid"><button v-for="item in filteredClasses" :key="item.id" class="choice-card" :class="{ active: selectedClass === item.id }" @click="selectedClass = item.id">{{ item.name }}</button></div></div><div class="selection-block"><h2>主题题库</h2><div class="choice-list"><button v-for="item in publishedTopics" :key="item.batch_id" class="choice-row" :class="{ active: selectedBatch === item.batch_id }" @click="selectedBatch = item.batch_id"><span>{{ item.code }} · {{ item.name }}</span><small>{{ item.question_count }} 题</small></button></div><p v-if="!publishedTopics.length" class="empty-state">目前没有已发布题库。</p></div><div v-if="sessionType === 'classroom'" class="selection-block"><h2>每题时间</h2><select v-model.number="timeLimitSeconds" class="text-input"><option :value="30">30 秒</option><option :value="60">60 秒</option><option :value="90">90 秒</option><option :value="120">120 秒</option></select></div><p v-if="error" class="error-message">{{ error }}</p><button class="primary-button" :disabled="saving || !selectedBatch || !selectedClass" @click="submit">{{ saving ? '建立中…' : '建立并生成入口' }}</button><div v-if="created" class="session-created"><img v-if="qr" :src="qr" alt="二维码" class="qr-code"><p class="success-message">已建立 {{ created.question_count }} 题</p><div v-if="created.practice_code" class="practice-code-box"><span>练习码</span><strong>{{ created.practice_code }}</strong></div><p><a :href="created.join_url" target="_blank">{{ created.join_url }}</a></p><RouterLink v-if="!created.practice_code" class="primary-button session-console-link" :to="`/teacher/sessions/${created.id}`">进入课堂控制台</RouterLink></div></section></main></template>
+
+<template>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <RouterLink class="back-link-inline" to="/teacher">← 返回老师工作台</RouterLink>
+        <p class="eyebrow">SESSION BUILDER</p>
+        <h1>建立课堂或练习</h1>
+        <p class="muted">练习码针对整份主题题库，课堂允许所有已登录学生扫码加入。</p>
+      </div>
+    </header>
+    <p v-if="loading" class="loading-state">正在读取资料…</p>
+    <p v-else-if="error && !created" class="error-message">{{ error }}</p>
+    <section v-else class="detail-panel session-create-panel">
+      <template v-if="!created">
+        <div class="selection-block">
+          <h2>使用方式</h2>
+          <div class="choice-grid">
+            <button class="choice-card" :class="{ active: sessionType === 'classroom' }" @click="sessionType = 'classroom'">数学课堂</button>
+            <button class="choice-card" :class="{ active: sessionType === 'homework' }" @click="sessionType = 'homework'">课后练习</button>
+          </div>
+        </div>
+        <div class="selection-block">
+          <h2>年级与班级</h2>
+          <div class="choice-grid grade-grid">
+            <button v-for="grade in grades" :key="grade.id" class="choice-card" :class="{ active: selectedGrade === grade.id }" @click="chooseGrade(grade.id)">{{ grade.name }}</button>
+          </div>
+          <div class="choice-grid">
+            <button v-for="item in filteredClasses" :key="item.id" class="choice-card" :class="{ active: selectedClass === item.id }" @click="selectedClass = item.id">{{ item.name }}</button>
+          </div>
+        </div>
+        <div class="selection-block">
+          <h2>主题题库</h2>
+          <div class="choice-list">
+            <button v-for="item in publishedTopics" :key="item.batch_id" class="choice-row" :class="{ active: selectedBatch === item.batch_id }" @click="selectedBatch = item.batch_id">
+              <span>{{ item.code }} · {{ item.name }}</span><small>{{ item.question_count }} 题</small>
+            </button>
+          </div>
+          <p v-if="!publishedTopics.length" class="empty-state">目前没有已发布题库。</p>
+        </div>
+        <div v-if="sessionType === 'classroom'" class="selection-block">
+          <h2>每题时间</h2>
+          <select v-model.number="timeLimitSeconds" class="text-input">
+            <option :value="30">30 秒</option><option :value="60">60 秒</option><option :value="90">90 秒</option><option :value="120">120 秒</option>
+          </select>
+        </div>
+        <p v-if="error" class="error-message">{{ error }}</p>
+        <button class="primary-button" :disabled="saving || !selectedBatch || !selectedClass" @click="submit">{{ saving ? '建立中…' : '建立并生成入口' }}</button>
+      </template>
+      <div v-if="created" class="session-created">
+        <img v-if="qr" :src="qr" alt="二维码" class="qr-code">
+        <p class="success-message">已建立 {{ created.question_count }} 题</p>
+        <div v-if="created.practice_code" class="practice-code-box"><span>练习码</span><strong>{{ created.practice_code }}</strong></div>
+        <div v-else class="participant-count">已进入课堂 <strong>{{ participantCount }}</strong> 人</div>
+        <p><a :href="created.join_url" target="_blank">{{ created.join_url }}</a></p>
+        <p v-if="error" class="error-message">{{ error }}</p>
+        <button v-if="!created.practice_code" class="primary-button session-console-link" :disabled="saving" @click="startClassroom">{{ saving ? '正在开始…' : '开始课堂' }}</button>
+      </div>
+    </section>
+  </main>
+</template>

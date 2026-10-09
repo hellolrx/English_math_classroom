@@ -1,7 +1,9 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { getClasses, getTeacherPracticeSummary, getTeacherTopics } from '../api/client'
 
+const route = useRoute()
 const classes = ref([])
 const topics = ref([])
 const selectedClassId = ref('')
@@ -35,8 +37,10 @@ async function load() {
     const [classRows, topicRows] = await Promise.all([getClasses(), getTeacherTopics()])
     classes.value = classRows
     topics.value = topicRows.filter(item => item.batch_id)
-    selectedClassId.value = classes.value[0]?.id || ''
-    selectedBatchId.value = topics.value[0]?.batch_id || ''
+    const requestedClassId = typeof route.query.class_id === 'string' ? route.query.class_id : ''
+    const requestedBatchId = typeof route.query.batch_id === 'string' ? route.query.batch_id : ''
+    selectedClassId.value = classes.value.some(item => item.id === requestedClassId) ? requestedClassId : (classes.value[0]?.id || '')
+    selectedBatchId.value = topics.value.some(item => item.batch_id === requestedBatchId) ? requestedBatchId : (topics.value[0]?.batch_id || '')
     await loadReport()
   } catch (e) {
     error.value = e.message
@@ -55,7 +59,7 @@ onMounted(load)
 <template>
   <main class="app-shell">
     <header class="topbar">
-      <div><RouterLink class="back-link-inline" to="/teacher">← 返回老师工作台</RouterLink><p class="eyebrow">REPORTS</p><h1>习题统计</h1><p class="muted">选择班级和当前题库，合并查看自主练习与练习码作答。</p></div>
+      <div><RouterLink class="back-link-inline" to="/teacher">← 返回老师工作台</RouterLink><p class="eyebrow">REPORTS</p><h1>习题统计</h1><p class="muted">选择班级和当前题库，合并查看课堂、自主练习与练习码作答。</p></div>
     </header>
     <p v-if="loading" class="loading-state">正在读取统计资料…</p>
     <p v-else-if="error && !report" class="error-message">{{ error }}</p>
@@ -66,7 +70,7 @@ onMounted(load)
       </div>
       <p v-if="loadingReport" class="loading-state">正在计算班级统计…</p>
       <template v-else-if="report">
-        <div class="report-context"><strong>{{ report.title }}</strong><span>{{ report.class?.name }} · 班级人数 {{ report.student_count }} · 已完成 {{ report.completed_count }} 人</span></div>
+        <div class="report-context"><strong>{{ report.title }}</strong><span>{{ report.class?.name }} · 班级人数 {{ report.student_count }} · 有作答 {{ report.participant_count }} 人</span></div>
         <article v-for="question in report.questions" :key="question.id" class="report-question">
           <div class="report-question-heading"><div><span class="question-number">{{ question.sort_order }}</span><strong>{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }}</strong></div><span>正确率 {{ question.accuracy }}%</span></div>
           <p class="correct-answer">正确答案：<strong>{{ question.correct_option || '不判分' }}</strong> · 已作答 {{ question.submitted_count }} 人 · 未作答 {{ question.unanswered_count }} 人</p>

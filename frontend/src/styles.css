@@ -71,6 +71,7 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
 .helper-text { margin: 14px 0 0; color: #78908b; font-size: 13px; line-height: 1.6; }
 .preview-count { margin: 8px 0 0; color: #146c4c; font-size: 14px; font-weight: 800; }
 .button-row { display: flex; gap: 10px; margin-top: 20px; }
+.classroom-action-row { justify-content: flex-end; }
 .secondary-button { border: 1px solid #b9d1ca; border-radius: 11px; padding: 13px 18px; color: #35615a; background: #fff; font-weight: 800; }
 .secondary-button:disabled, .compact-button:disabled { cursor: not-allowed; opacity: .55; }
 .compact-button { padding: 13px 18px; }

@@ -453,7 +453,7 @@ async def import_topic(request: Request, topic_id: str = Form(...), file: Upload
 async def _classroom_payload(request: Request, session: dict[str, Any], *, include_answer: bool = False) -> dict[str, Any]:
     session = await _advance_classroom_if_expired(request, session)
     if not session.get("batch_id"):
-        status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session['id']}", "select": "id,batch_id,status,current_question_id,question_status,duration_seconds,question_opened_at,deadline_at"})
+        status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session['id']}", "select": "id,batch_id,class_id,status,current_question_id,question_status,duration_seconds,question_opened_at,deadline_at"})
         if status < 400 and rows:
             session = rows[0]
     question = None
@@ -579,7 +579,7 @@ async def next_new_classroom(session_id: str, request: Request, authorization: s
 @app.get("/api/teacher/classrooms/{session_id}/stats")
 async def new_classroom_stats(session_id: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     token = bearer_token(authorization); teacher = await current_teacher_profile(request, token)
-    status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,batch_id,status,current_question_id,question_status,duration_seconds,question_opened_at,deadline_at"})
+    status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,batch_id,class_id,status,current_question_id,question_status,duration_seconds,question_opened_at,deadline_at"})
     if status >= 400 or not rows: raise HTTPException(status_code=404, detail="找不到课堂")
     return await _classroom_payload(request, rows[0], include_answer=True)
 
@@ -637,17 +637,20 @@ async def teacher_practice_summary(
         if round_status >= 400:
             raise HTTPException(status_code=502, detail="无法读取班级答题记录")
     latest_round_ids: list[str] = []
-    latest_students: set[str] = set()
+    latest_round_by_student: dict[str, dict[str, Any]] = {}
+    round_by_id: dict[str, dict[str, Any]] = {}
     for round_row in rounds:
+        if round_row.get("id"):
+            round_by_id[round_row["id"]] = round_row
         student_id = round_row.get("student_id")
-        if student_id and student_id not in latest_students:
-            latest_students.add(student_id)
+        if student_id and student_id not in latest_round_by_student:
+            latest_round_by_student[student_id] = round_row
             latest_round_ids.append(round_row["id"])
     answers: list[dict[str, Any]] = []
     if latest_round_ids:
         answer_status, answers = await supabase_request(
             request, "GET", "/rest/v1/practice_answers", service_role=True,
-            params={"round_id": f"in.({','.join(latest_round_ids)})", "state": "in.(confirmed,unanswered)", "select": "question_id,selected_option,is_correct,round_id"},
+            params={"round_id": f"in.({','.join(latest_round_ids)})", "state": "in.(confirmed,unanswered)", "select": "question_id,selected_option,is_correct,round_id,updated_at"},
         )
         if answer_status >= 400:
             raise HTTPException(status_code=502, detail="无法读取题目答案")
@@ -657,23 +660,53 @@ async def teacher_practice_summary(
     )
     if question_status >= 400:
         raise HTTPException(status_code=502, detail="无法读取题库题目")
+    # 课堂和自主练习都落在不同的答案表；按学生和题目取最新一次，避免重复计数。
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for answer in answers:
+        round_row = round_by_id.get(answer.get("round_id"))
+        if not round_row:
+            continue
+        student_id = round_row.get("student_id")
+        key = (student_id, answer.get("question_id"))
+        merged[key] = {**answer, "student_id": student_id, "answered_at": answer.get("updated_at") or round_row.get("completed_at") or ""}
+    if student_ids:
+        classroom_status, sessions = await supabase_request(
+            request, "GET", "/rest/v1/classroom_sessions", service_role=True,
+            params={"batch_id": f"eq.{batch_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id"},
+        )
+        if classroom_status >= 400:
+            raise HTTPException(status_code=502, detail="无法读取课堂记录")
+        session_ids = [row["id"] for row in sessions]
+        if session_ids:
+            classroom_answer_status, classroom_answers = await supabase_request(
+                request, "GET", "/rest/v1/classroom_answers", service_role=True,
+                params={"session_id": f"in.({','.join(session_ids)})", "student_id": f"in.({','.join(student_ids)})", "select": "student_id,question_id,selected_option,is_correct,answered_at", "order": "answered_at.asc"},
+            )
+            if classroom_answer_status >= 400:
+                raise HTTPException(status_code=502, detail="无法读取课堂答案")
+            for answer in classroom_answers:
+                key = (answer.get("student_id"), answer.get("question_id"))
+                previous = merged.get(key)
+                if not previous or (answer.get("answered_at") or "") >= (previous.get("answered_at") or ""):
+                    merged[key] = answer
+    participant_ids = {student_id for student_id, _ in merged}
     reports = []
     for question in questions:
-        current = [answer for answer in answers if answer.get("question_id") == question["id"]]
+        current = [answer for answer in merged.values() if answer.get("question_id") == question["id"]]
         distribution = {key: sum(1 for answer in current if answer.get("selected_option") == key) for key in "ABCD"}
         correct_count = sum(1 for answer in current if answer.get("is_correct") is True)
         answered_count = sum(1 for answer in current if answer.get("selected_option") or answer.get("is_correct") is not None)
         reports.append({
             "id": question["id"], "sort_order": question["sort_order"], "question_type": question["question_type"],
             "correct_option": question.get("correct_option"), "submitted_count": answered_count,
-            "unanswered_count": max(len(latest_round_ids) - answered_count, 0), "correct_count": correct_count,
+            "unanswered_count": max(len(participant_ids) - answered_count, 0), "correct_count": correct_count,
             "accuracy": round(correct_count / answered_count * 100, 1) if answered_count else 0, "distribution": distribution,
         })
     topic = batches[0].get("topics") or {}
     return {
         "title": f"{topic.get('code', '')} {topic.get('name', '')}",
         "class": classes[0], "batch_id": batch_id, "student_count": len(students),
-        "completed_count": len(latest_round_ids), "participant_count": len(latest_round_ids), "questions": reports,
+        "completed_count": len(participant_ids), "participant_count": len(participant_ids), "questions": reports,
     }
 
 
