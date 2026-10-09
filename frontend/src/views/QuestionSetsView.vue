@@ -91,13 +91,13 @@ onMounted(loadTopics)
         <section v-if="!preview && currentTopic?.questions?.length" class="current-topic-preview">
           <div class="panel-heading"><div><h3>当前题目预览</h3><p class="muted">点击主题后直接查看当前已发布题目。</p></div></div>
           <article v-for="question in currentTopic.questions" :key="question.id" class="question-preview-card">
-            <span class="question-number">{{ question.source_question_number || question.sort_order }}</span><div class="question-preview-body"><img :src="question.question_image_url" class="question-image" alt="题目截图" /><p class="helper-text">{{ question.source_reference }} · 原题第 {{ question.source_question_number }} 题 · {{ question.source_paper }}<template v-if="question.correct_option"> · 答案 {{ question.correct_option }}</template></p></div>
+            <span class="question-number">{{ question.sort_order }}</span><div class="question-preview-body"><img :src="question.question_image_url" class="question-image" alt="题目截图" /><p class="helper-text">{{ question.source_reference }} · 原题第 {{ question.source_question_number }} 题 · {{ question.source_paper }}<template v-if="question.correct_option"> · 答案 {{ question.correct_option }}</template></p></div>
           </article>
         </section>
         <section v-if="preview" class="preview-panel">
           <div class="panel-heading"><div><h3>{{ preview.filename }}</h3><p>预览 {{ preview.question_count }} 题</p></div></div>
-          <article v-for="question in preview.questions" :key="question.row_number" class="question-preview-card">
-            <span class="question-number">{{ question.source_question_number }}</span><div class="question-preview-body">
+          <article v-for="(question, index) in preview.questions" :key="question.row_number" class="question-preview-card">
+            <span class="question-number">{{ index + 1 }}</span><div class="question-preview-body">
               <img v-if="question.question_image_url" class="question-image" :src="question.question_image_url" alt="题目截图" />
               <p v-if="question.question_text">{{ question.question_text }}</p>
               <p class="helper-text">{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }} · {{ question.source_reference }} · 年份 {{ question.source_year }} · 原题 {{ question.source_question_number }} · {{ question.source_paper }}<template v-if="question.correct_answer"> · 答案 {{ question.correct_answer }}</template></p>

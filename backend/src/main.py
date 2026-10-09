@@ -347,9 +347,9 @@ async def _storage_upload(request: Request, path: str, data_url: str) -> tuple[s
 async def _signed_image_url(request: Request, path: str) -> str:
     from urllib.parse import quote
     status, result = await supabase_request(request, "POST", f"/storage/v1/object/sign/question-images-v2/{quote(path, safe='/')}", service_role=True, body={"expiresIn": 3600})
-    if status >= 400 or not result.get("signedURL"):
+    signed = result.get("signedURL") or result.get("signedUrl") if isinstance(result, dict) else None
+    if status >= 400 or not signed:
         return ""
-    signed = result["signedURL"]
     return signed if signed.startswith("http") else f"{supabase_url(request)}{signed}"
 
 
@@ -375,12 +375,12 @@ async def teacher_topic_detail(topic_id: str, request: Request, authorization: s
     status, topics = await supabase_request(request, "GET", "/rest/v1/topics", service_role=True, params={"id": f"eq.{topic_id}", "school_id": f"eq.{teacher['school_id']}", "select": "id,code,name"})
     if status >= 400 or not topics:
         raise HTTPException(status_code=404, detail="找不到主题")
-    _, batches = await supabase_request(request, "GET", "/rest/v1/math_batches", service_role=True, params={"topic_id": f"eq.{topic_id}", "status": "eq.published", "select": "id,created_at,published_at,questions(id,sort_order,question_type,image_path,correct_option,source_reference,source_year,source_question_number,source_paper)", "order": "created_at.desc", "limit": "1"})
+    _, batches = await supabase_request(request, "GET", "/rest/v1/math_batches", service_role=True, params={"topic_id": f"eq.{topic_id}", "status": "eq.published", "select": "id,created_at,published_at,questions(id,sort_order,question_type,image_bucket,image_path,correct_option,source_reference,source_year,source_question_number,source_paper)", "order": "created_at.desc", "limit": "1"})
     batch = batches[0] if batches else None
     questions = []
     if batch:
         for q in sorted(batch.get("questions", []), key=lambda item: item["sort_order"]):
-            questions.append({**q, "question_image_url": await _signed_image_url(request, q["image_path"])})
+            questions.append({**q, "question_image_url": await _signed_question_image(request, q.get("image_bucket", "question-images-v2"), q["image_path"])})
     return {**topics[0], "batch": batch, "questions": questions}
 
 
@@ -904,9 +904,9 @@ async def _signed_question_image(request: Request, bucket: str, path: str) -> st
         request, "POST", f"/storage/v1/object/sign/{quote(bucket, safe='')}/{quote(path, safe='/')}",
         service_role=True, body={"expiresIn": 900},
     )
-    if status >= 400 or not result.get("signedURL"):
+    signed_url = result.get("signedURL") or result.get("signedUrl") if isinstance(result, dict) else None
+    if status >= 400 or not signed_url:
         raise HTTPException(status_code=502, detail="無法讀取題目圖片")
-    signed_url = result["signedURL"]
     if signed_url.startswith("http://") or signed_url.startswith("https://"):
         return signed_url
     return f"{supabase_url(request)}{signed_url if signed_url.startswith('/storage/v1/') else '/storage/v1' + signed_url}"

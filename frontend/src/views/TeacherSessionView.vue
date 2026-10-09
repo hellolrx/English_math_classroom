@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { getTeacherClassroomStats, nextTeacherClassroom, startTeacherClassroom } from '../api/client'
 const route = useRoute(); const state = ref(null); const error = ref(''); const busy = ref(false); let timer
-async function load() { try { state.value = await getTeacherClassroomStats(route.params.id); error.value = '' } catch (e) { error.value = e.message } }
+async function load() { try { state.value = await getTeacherClassroomStats(route.params.id); error.value = '' } catch (e) { if (!state.value) error.value = e.message } }
 async function start() { busy.value = true; try { await startTeacherClassroom(route.params.id); await load() } catch (e) { error.value = e.message } finally { busy.value = false } }
 async function next() { busy.value = true; try { await nextTeacherClassroom(route.params.id); await load() } catch (e) { error.value = e.message } finally { busy.value = false } }
 onMounted(async () => { await load(); timer = setInterval(load, 2000) }); onUnmounted(() => clearInterval(timer))
