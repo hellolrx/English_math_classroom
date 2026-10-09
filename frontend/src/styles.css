@@ -160,6 +160,7 @@ a { color: #0f766e; font-weight: 700; text-decoration: none; }
 .practice-code-box { display: grid; gap: 7px; margin-top: 18px; padding: 18px; border-radius: 13px; color: #145b4d; background: #eaf8f1; text-align: center; }
 .practice-code-box span { font-size: 13px; }
 .practice-code-box strong { font-size: 25px; letter-spacing: .08em; overflow-wrap: anywhere; }
+.session-console-link { display: inline-flex; justify-content: center; width: 100%; margin-top: 18px; }
 .practice-result-list { display: grid; gap: 9px; margin-top: 18px; }
 .practice-result-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 10px; background: #f7fbfa; }
 .result-correct { color: #16834f; }
