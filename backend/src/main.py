@@ -375,13 +375,24 @@ async def teacher_topic_detail(topic_id: str, request: Request, authorization: s
     status, topics = await supabase_request(request, "GET", "/rest/v1/topics", service_role=True, params={"id": f"eq.{topic_id}", "school_id": f"eq.{teacher['school_id']}", "select": "id,code,name"})
     if status >= 400 or not topics:
         raise HTTPException(status_code=404, detail="找不到主题")
-    _, batches = await supabase_request(request, "GET", "/rest/v1/math_batches", service_role=True, params={"topic_id": f"eq.{topic_id}", "status": "eq.published", "select": "id,created_at,published_at,questions(id,sort_order,question_type,image_path,correct_option,source_year,source_question_number)", "order": "created_at.desc", "limit": "1"})
+    _, batches = await supabase_request(request, "GET", "/rest/v1/math_batches", service_role=True, params={"topic_id": f"eq.{topic_id}", "status": "eq.published", "select": "id,created_at,published_at,questions(id,sort_order,question_type,image_path,correct_option,source_reference,source_year,source_question_number,source_paper)", "order": "created_at.desc", "limit": "1"})
     batch = batches[0] if batches else None
     questions = []
     if batch:
         for q in sorted(batch.get("questions", []), key=lambda item: item["sort_order"]):
             questions.append({**q, "question_image_url": await _signed_image_url(request, q["image_path"])})
     return {**topics[0], "batch": batch, "questions": questions}
+
+
+@app.get("/api/teacher/questions")
+async def search_teacher_questions(request: Request, year: str | None = None, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    token = bearer_token(authorization)
+    teacher = await current_teacher_profile(request, token)
+    params = {"source_year": f"eq.{year.strip()}", "select": "id,batch_id,sort_order,source_reference,source_year,source_question_number,source_paper,math_batches!inner(topic_id,topics!inner(code,name,school_id))", "math_batches.topics.school_id": f"eq.{teacher['school_id']}", "order": "source_year.asc,source_question_number.asc"} if year and year.strip() else {"select": "id,batch_id,sort_order,source_reference,source_year,source_question_number,source_paper,math_batches!inner(topic_id,topics!inner(code,name,school_id))", "math_batches.topics.school_id": f"eq.{teacher['school_id']}", "order": "source_year.asc,source_question_number.asc"}
+    status, rows = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params=params)
+    if status >= 400:
+        raise HTTPException(status_code=502, detail="无法检索题目来源")
+    return rows
 
 
 @app.post("/api/teacher/topics/preview")
@@ -397,7 +408,7 @@ async def preview_topic_import(request: Request, topic_id: str = Form(...), file
         questions = parse_question_excel(await file.read())
     except ExcelImportError as error:
         raise import_error_response(error) from error
-    return {"filename": file.filename, "topic_id": topic_id, "question_count": len(questions), "questions": [{"row_number": q.row_number, "question_text": q.question_text, "question_image_url": q.question_image_url, "question_type": q.question_type, "correct_answer": q.correct_answer, "source_year": q.source_year} for q in questions]}
+    return {"filename": file.filename, "topic_id": topic_id, "question_count": len(questions), "questions": [{"row_number": q.row_number, "question_text": q.question_text, "question_image_url": q.question_image_url, "question_type": q.question_type, "correct_answer": q.correct_answer, "source_reference": q.source_reference, "source_year": q.source_year, "source_question_number": q.source_question_number, "source_paper": q.source_paper} for q in questions]}
 
 
 @app.post("/api/teacher/topics/import")
@@ -427,7 +438,7 @@ async def import_topic(request: Request, topic_id: str = Form(...), file: Upload
             raise HTTPException(status_code=422, detail=f"第 {q.row_number} 行缺少题目截图")
         image_path = f"{topic_id}/{batch_id}/{order}-{secrets.token_hex(6)}.jpg"
         _, image_bytes = await _storage_upload(request, image_path, q.question_image_url)
-        question_rows.append({"id": str(uuid4()), "batch_id": batch_id, "sort_order": order, "question_type": q.question_type, "image_path": image_path, "image_bytes": image_bytes, "correct_option": q.correct_answer, "source_year": q.source_year})
+        question_rows.append({"id": str(uuid4()), "batch_id": batch_id, "sort_order": order, "question_type": q.question_type, "image_path": image_path, "image_bytes": image_bytes, "correct_option": q.correct_answer, "source_reference": q.source_reference, "source_year": q.source_year, "source_question_number": q.source_question_number, "source_paper": q.source_paper})
     status, result = await supabase_request(request, "POST", "/rest/v1/questions", service_role=True, prefer_representation=True, body=question_rows)
     if status >= 400:
         await supabase_request(request, "PATCH", "/rest/v1/import_jobs", service_role=True, params={"id": f"eq.{job_id}"}, body={"status": "failed", "errors": [{"message": "写入题目失败"}]})
@@ -1569,6 +1580,10 @@ async def create_session(
 ) -> dict[str, Any]:
     token = bearer_token(authorization)
     teacher = await current_teacher_profile(request, token)
+    if payload.session_type not in {"classroom", "homework"}:
+        raise HTTPException(status_code=422, detail="不支持的场次类型")
+    if not payload.batch_id:
+        raise HTTPException(status_code=422, detail="必须指定题库批次")
     if payload.batch_id:
         batch_status, batches = await supabase_request(request, "GET", "/rest/v1/math_batches", service_role=True, params={"id": f"eq.{payload.batch_id}", "status": "eq.published", "select": "id,topic_id,topics(school_id)"})
         if batch_status >= 400 or not batches or batches[0].get("topics", {}).get("school_id") != teacher["school_id"]:
@@ -1594,65 +1609,6 @@ async def create_session(
             raise HTTPException(status_code=502, detail="写入课堂题目失败")
         app_url = env_value(request, "PUBLIC_APP_URL", "http://localhost:5173").rstrip("/")
         return {**session, "join_url": f"{app_url}/student/session/{session['access_token']}", "question_count": len(questions)}
-    if not payload.question_set_id:
-        raise HTTPException(status_code=422, detail="必须指定题库批次")
-    if payload.session_type not in {"classroom", "homework"}:
-        raise HTTPException(status_code=422, detail="不支持的场次类型")
-    time_limit_seconds = 0 if payload.session_type == "homework" else int(payload.time_limit_seconds or 0)
-    if time_limit_seconds and time_limit_seconds < 10:
-        raise HTTPException(status_code=422, detail="课堂限时最少为 10 秒，或选择不限时")
-    set_status, sets = await supabase_request(
-        request,
-        "GET",
-        "/rest/v1/question_sets",
-        access_token=token,
-        params={"id": f"eq.{payload.question_set_id}", "select": "id,name,status"},
-    )
-    if set_status >= 400 or not sets:
-        raise HTTPException(status_code=404, detail="找不到题目集合")
-    if sets[0]["status"] != "published":
-        raise HTTPException(status_code=409, detail="请先发布题目集合，再创建课堂场次")
-    class_status, classes = await supabase_request(
-        request,
-        "GET",
-        "/rest/v1/classes",
-        access_token=token,
-        params={"id": f"eq.{payload.class_id}", "select": "id,name,code"},
-    )
-    if class_status >= 400 or not classes:
-        raise HTTPException(status_code=404, detail="找不到班级")
-    questions = await session_questions(request, payload.question_set_id)
-    if not questions:
-        raise HTTPException(status_code=409, detail="题目集合没有题目")
-    access_token = secrets.token_urlsafe(24)
-    status, result = await supabase_request(
-        request,
-        "POST",
-        "/rest/v1/sessions",
-        service_role=True,
-        prefer_representation=True,
-        body={
-            "created_by": teacher["user_id"],
-            "question_set_id": payload.question_set_id,
-            "class_id": payload.class_id,
-            "session_type": payload.session_type,
-            "access_token": access_token,
-            "status": "waiting" if payload.session_type == "classroom" else "active",
-            "current_question_status": "pending",
-            "starts_at": utc_now().isoformat() if payload.session_type == "homework" else None,
-            "time_limit_seconds": time_limit_seconds,
-            "question_started_at": None,
-        },
-    )
-    if status >= 400 or not result:
-        raise HTTPException(status_code=502, detail="创建课堂场次失败")
-    app_url = env_value(request, "PUBLIC_APP_URL", "http://localhost:5173").rstrip("/")
-    return {
-        **result[0],
-        "join_url": f"{app_url}/student/session/{access_token}",
-        "question_count": len(questions),
-        "practice_code": access_token if payload.session_type == "homework" else None,
-    }
 
 
 async def start_session(

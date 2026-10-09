@@ -73,6 +73,10 @@ export async function getTeacherTopics() {
 export async function getTeacherTopic(id) {
   return apiRequest(`/api/teacher/topics/${encodeURIComponent(id)}`)
 }
+export async function searchTeacherQuestions(year) {
+  const query = year?.trim() ? `?year=${encodeURIComponent(year.trim())}` : ''
+  return apiRequest(`/api/teacher/questions${query}`)
+}
 
 export async function previewTopicImport(topicId, file) {
   const body = new FormData()

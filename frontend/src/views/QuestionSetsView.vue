@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getTeacherTopics, importTopic, previewTopicImport } from '../api/client'
+import { getTeacherTopics, importTopic, previewTopicImport, searchTeacherQuestions } from '../api/client'
 
 const topics = ref([])
 const selectedTopicId = ref('')
@@ -11,6 +11,9 @@ const loading = ref(true)
 const busy = ref(false)
 const error = ref('')
 const success = ref('')
+const searchYear = ref('')
+const searchResults = ref([])
+const searching = ref(false)
 const selectedTopic = computed(() => topics.value.find(topic => topic.id === selectedTopicId.value))
 
 async function loadTopics() {
@@ -57,6 +60,12 @@ async function replaceTopic() {
   } catch (e) { error.value = typeof e.message === 'string' ? e.message : JSON.stringify(e.message) } finally { busy.value = false }
 }
 
+async function searchByYear() {
+  searching.value = true
+  error.value = ''
+  try { searchResults.value = await searchTeacherQuestions(searchYear.value) } catch (e) { error.value = e.message } finally { searching.value = false }
+}
+
 onMounted(loadTopics)
 </script>
 
@@ -74,7 +83,7 @@ onMounted(loadTopics)
       <section v-if="selectedTopic" class="topic-admin-content">
         <div class="panel-heading"><div><p class="eyebrow">{{ selectedTopic.code }}</p><h2>{{ selectedTopic.name }}</h2><p class="muted">当前题量：{{ selectedTopic.question_count }}</p><RouterLink class="back-link-inline" :to="`/teacher/question-sets/${selectedTopic.id}`">查看当前题目</RouterLink></div></div>
         <label class="topic-upload"><span>选择 Excel 文件</span><input ref="fileInput" type="file" accept=".xlsx" @change="chooseFile"></label>
-        <p class="helper-text">Excel 列：题目截图、正确答案、题型、年份。题型填写“选择题”或“非选择题”；选择题答案为 A-D，非选择题答案留空。</p>
+        <p class="helper-text">Excel 列：来源、题目截图、正确答案。来源填写完整标识，例如 DSE 2022 MT II (2)；答案为 A-D 时自动识别为选择题，留空时识别为非选择题。</p>
         <p v-if="error" class="error-message">{{ error }}</p><p v-if="success" class="success-message">{{ success }}</p><p v-if="busy" class="loading-state">正在处理…</p>
         <section v-if="preview" class="preview-panel">
           <div class="panel-heading"><div><h3>{{ preview.filename }}</h3><p>预览 {{ preview.question_count }} 题</p></div></div>
@@ -82,11 +91,17 @@ onMounted(loadTopics)
             <span class="question-number">{{ index + 1 }}</span><div class="question-preview-body">
               <img v-if="question.question_image_url" class="question-image" :src="question.question_image_url" alt="题目截图" />
               <p v-if="question.question_text">{{ question.question_text }}</p>
-              <p class="helper-text">{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }} · {{ question.source_year || '未填写年份' }}<template v-if="question.correct_answer"> · 答案 {{ question.correct_answer }}</template></p>
+              <p class="helper-text">{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }} · {{ question.source_reference }} · 年份 {{ question.source_year }} · 原题 {{ question.source_question_number }} · {{ question.source_paper }}<template v-if="question.correct_answer"> · 答案 {{ question.correct_answer }}</template></p>
             </div>
           </article>
           <button class="primary-button" :disabled="busy" @click="replaceTopic">确认覆盖此主题</button>
         </section>
+      </section>
+      <section class="detail-panel source-search-panel">
+        <div class="panel-heading"><div><p class="eyebrow">SOURCE SEARCH</p><h2>按年份检索题目</h2><p class="muted">输入 2012、2022 等年份，查看对应的完整来源。</p></div></div>
+        <form class="source-search-form" @submit.prevent="searchByYear"><input v-model="searchYear" inputmode="numeric" placeholder="例如 2022"><button class="secondary-button" :disabled="searching">{{ searching ? '检索中…' : '检索' }}</button></form>
+        <p v-if="searchResults.length === 0 && searchYear" class="empty-state">没有找到对应年份的题目。</p>
+        <div v-else class="source-result-list"><div v-for="item in searchResults" :key="item.id" class="source-result-row"><strong>{{ item.source_reference }}</strong><span>{{ item.math_batches?.topics?.code }} · 第 {{ item.sort_order }} 题</span></div></div>
       </section>
     </div>
   </main>

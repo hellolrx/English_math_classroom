@@ -156,7 +156,7 @@ create table public.questions (
   image_path text not null check (btrim(image_path) <> ''),
   image_bytes integer not null check (image_bytes between 1 and 1048576),
   correct_option text,
-  source_year text, question_year text, source_question_number text,
+  source_reference text, source_year text, source_paper text, question_year text, source_question_number text,
   created_at timestamptz not null default now(),
   unique (batch_id, sort_order), unique (id, batch_id),
   check ((question_type = 'single_choice' and correct_option is not null and correct_option in ('A','B','C','D'))

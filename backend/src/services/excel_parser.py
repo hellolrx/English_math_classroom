@@ -24,7 +24,7 @@ HEADER_ALIASES: dict[str, tuple[str, ...]] = {
     "question_text": ("题目", "题目内容", "question", "question_text"),
     "correct_answer": ("正确答案", "正確答案", "答案", "correct_answer", "answer"),
     "question_type": ("题型", "題型", "question_type"),
-    "source_year": ("年份", "来源年份", "來源年份", "source_year", "year"),
+    "source_reference": ("来源", "來源", "完整来源", "完整來源", "source_reference", "source"),
 }
 
 
@@ -35,7 +35,10 @@ class ParsedQuestion:
     question_image_url: str | None
     question_type: str
     correct_answer: str | None
-    source_year: str | None
+    source_reference: str
+    source_year: str
+    source_question_number: str
+    source_paper: str
 
 
 class ExcelImportError(ValueError):
@@ -64,7 +67,7 @@ def _find_columns(header_row: tuple[Any, ...]) -> dict[str, int]:
             if index is not None:
                 columns[field] = index
                 break
-        if field != "source_year" and field not in columns:
+        if field == "source_reference" and field not in columns:
             missing.append(aliases[0])
     if missing:
         raise ExcelImportError([f"缺少必要欄位：{', '.join(missing)}"])
@@ -78,6 +81,22 @@ def _correct_key(value: str) -> str | None:
 
 
 _DISPIMG_RE = re.compile(r'DISPIMG\(\s*["\']([^"\']+)["\']', re.IGNORECASE)
+_SOURCE_RE = re.compile(
+    r"^\[?\s*DSE\s*(?P<year>\d{4})\s*(?P<paper>.*?)(?:\(\s*(?P<bracket>\d+)\s*\)|[-–—]\s*(?P<dash>\d+)\s*)\]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_source_reference(value: str) -> tuple[str, str, str, str] | None:
+    raw = " ".join(value.strip().split())
+    match = _SOURCE_RE.match(raw)
+    if not match:
+        return None
+    paper = " ".join((match.group("paper") or "").strip(" .-–—").split())
+    question_number = match.group("bracket") or match.group("dash")
+    if not paper or not question_number:
+        return None
+    return raw, match.group("year"), question_number, paper
 
 
 def _data_url(filename: str, content: bytes) -> str:
@@ -246,19 +265,27 @@ def parse_question_excel(content: bytes) -> list[ParsedQuestion]:
         question_image_url = formula_images.get(question_cell) or anchored_images.get(question_cell)
         if question_image_url and _DISPIMG_RE.search(question_text):
             question_text = ""
-        raw_type = _text(values[columns["question_type"]] if columns["question_type"] < len(values) else None)
+        raw_type = _text(values[columns["question_type"]] if "question_type" in columns and columns["question_type"] < len(values) else None)
         type_aliases = {
             "选择题": "single_choice", "選擇題": "single_choice", "single_choice": "single_choice",
             "非选择题": "text_input", "非選擇題": "text_input", "text_input": "text_input",
         }
-        question_type = type_aliases.get(raw_type.strip().lower())
+        question_type = type_aliases.get(raw_type.strip().lower()) if raw_type else None
         raw_answer = _text(values[columns["correct_answer"]] if columns["correct_answer"] < len(values) else None)
         correct_answer = _correct_key(raw_answer)
-        source_year = _text(values[columns["source_year"]] if "source_year" in columns and columns["source_year"] < len(values) else None) or None
+        source_value = _text(values[columns["source_reference"]] if "source_reference" in columns and columns["source_reference"] < len(values) else None)
+        source = parse_source_reference(source_value) if source_value else None
+
+        # The compact three-column template omits 题型. Infer it from the
+        # answer: A-D means multiple choice; an empty answer means free text.
+        if question_type is None and not raw_type:
+            question_type = "single_choice" if correct_answer else "text_input"
 
         row_errors: list[str] = []
         if not question_image_url:
             row_errors.append("题目必须包含题目截图（请将图片嵌入题目单元格）")
+        if not source:
+            row_errors.append("来源列必须填写完整来源，例如：DSE 2022 MT II (2)")
         if question_type is None:
             row_errors.append("题型必须填写“选择题”或“非选择题”")
         elif question_type == "single_choice" and correct_answer is None:
@@ -268,7 +295,7 @@ def parse_question_excel(content: bytes) -> list[ParsedQuestion]:
         if row_errors:
             errors.append(f"第 {row_number} 行：{'；'.join(row_errors)}")
             continue
-        parsed.append(ParsedQuestion(row_number, question_text, question_image_url, question_type, correct_answer, source_year))
+        parsed.append(ParsedQuestion(row_number, question_text, question_image_url, question_type, correct_answer, source[0], source[1], source[2], source[3]))
 
     if not parsed and not errors:
         errors.append("Excel 文件没有可导入的题目")

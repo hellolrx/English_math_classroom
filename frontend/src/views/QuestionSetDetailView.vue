@@ -21,7 +21,7 @@ onMounted(async () => {
       <article v-for="question in topic.questions" :key="question.id" class="question-preview-card">
         <span class="question-number">{{ question.sort_order }}</span><div class="question-preview-body">
           <img :src="question.question_image_url" class="question-image" alt="题目截图" />
-          <p class="helper-text">{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }} · {{ question.source_year || '未填写年份' }}<template v-if="question.correct_option"> · 答案 {{ question.correct_option }}</template></p>
+          <p class="helper-text">{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }} · {{ question.source_reference || '未填写来源' }} · 年份 {{ question.source_year || '未解析' }} · 原题 {{ question.source_question_number || '未解析' }} · {{ question.source_paper || '未解析' }}<template v-if="question.correct_option"> · 答案 {{ question.correct_option }}</template></p>
         </div>
       </article>
     </section>
