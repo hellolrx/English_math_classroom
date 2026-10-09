@@ -87,21 +87,21 @@ onMounted(loadTopics)
         <p v-if="error" class="error-message">{{ error }}</p><p v-if="success" class="success-message">{{ success }}</p><p v-if="busy" class="loading-state">正在处理…</p>
         <section v-if="preview" class="preview-panel">
           <div class="panel-heading"><div><h3>{{ preview.filename }}</h3><p>预览 {{ preview.question_count }} 题</p></div></div>
-          <article v-for="(question, index) in preview.questions" :key="question.row_number" class="question-preview-card">
-            <span class="question-number">{{ index + 1 }}</span><div class="question-preview-body">
+          <article v-for="question in preview.questions" :key="question.row_number" class="question-preview-card">
+            <span class="question-number">{{ question.source_question_number }}</span><div class="question-preview-body">
               <img v-if="question.question_image_url" class="question-image" :src="question.question_image_url" alt="题目截图" />
               <p v-if="question.question_text">{{ question.question_text }}</p>
               <p class="helper-text">{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }} · {{ question.source_reference }} · 年份 {{ question.source_year }} · 原题 {{ question.source_question_number }} · {{ question.source_paper }}<template v-if="question.correct_answer"> · 答案 {{ question.correct_answer }}</template></p>
             </div>
           </article>
-          <button class="primary-button" :disabled="busy" @click="replaceTopic">确认覆盖此主题</button>
+          <div class="preview-confirm-row"><span class="confirm-label">确认提交</span><button class="primary-button" :disabled="busy" @click="replaceTopic">确认提交</button></div>
         </section>
       </section>
       <section class="detail-panel source-search-panel">
         <div class="panel-heading"><div><p class="eyebrow">SOURCE SEARCH</p><h2>按年份检索题目</h2><p class="muted">输入 2012、2022 等年份，查看对应的完整来源。</p></div></div>
         <form class="source-search-form" @submit.prevent="searchByYear"><input v-model="searchYear" inputmode="numeric" placeholder="例如 2022"><button class="secondary-button" :disabled="searching">{{ searching ? '检索中…' : '检索' }}</button></form>
         <p v-if="searchResults.length === 0 && searchYear" class="empty-state">没有找到对应年份的题目。</p>
-        <div v-else class="source-result-list"><div v-for="item in searchResults" :key="item.id" class="source-result-row"><strong>{{ item.source_reference }}</strong><span>{{ item.math_batches?.topics?.code }} · 第 {{ item.sort_order }} 题</span></div></div>
+        <div v-else class="source-result-list"><div v-for="item in searchResults" :key="item.id" class="source-result-row"><strong>{{ item.source_reference }}</strong><span>{{ item.math_batches?.topics?.code }} · 原题第 {{ item.source_question_number }} 题</span></div></div>
       </section>
     </div>
   </main>
