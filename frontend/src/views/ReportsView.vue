@@ -74,7 +74,7 @@ onMounted(load)
         <article v-for="question in report.questions" :key="question.id" class="report-question">
           <div class="report-question-heading"><div><span class="question-number">{{ question.sort_order }}</span><strong>{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }}</strong></div><span>正确率 {{ question.accuracy }}%</span></div>
           <p class="correct-answer">正确答案：<strong>{{ question.correct_option || '不判分' }}</strong> · 已作答 {{ question.submitted_count }} 人 · 未作答 {{ question.unanswered_count }} 人</p>
-          <div class="report-bars"><div v-for="key in ['A','B','C','D']" :key="key" class="report-bar"><span>{{ key }}</span><div><i :style="{ width: percent(question.distribution[key], question.submitted_count) }"></i></div><b>{{ question.distribution[key] }}（{{ percent(question.distribution[key], question.submitted_count) }}）</b></div></div>
+          <div class="report-bars"><div v-for="key in ['A','B','C','D']" :key="key" class="report-bar"><span>{{ key }}</span><div><i :style="{ width: percent(question.distribution[key], question.submitted_count) }"></i></div><b><strong>{{ question.distribution[key] }}</strong><small>{{ percent(question.distribution[key], question.submitted_count) }}</small></b></div></div>
           <p class="helper-text">答对 {{ question.correct_count }} 人</p>
         </article>
       </template>
