@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getTeacherTopics, importTopic, previewTopicImport, searchTeacherQuestions } from '../api/client'
+import { getTeacherTopic, getTeacherTopics, importTopic, previewTopicImport, searchTeacherQuestions } from '../api/client'
 
 const topics = ref([])
 const selectedTopicId = ref('')
 const fileInput = ref(null)
 const file = ref(null)
 const preview = ref(null)
+const currentTopic = ref(null)
 const loading = ref(true)
 const busy = ref(false)
 const error = ref('')
@@ -21,6 +22,7 @@ async function loadTopics() {
   try {
     topics.value = await getTeacherTopics()
     if (!selectedTopicId.value) selectedTopicId.value = topics.value[0]?.id || ''
+    if (selectedTopicId.value) currentTopic.value = await getTeacherTopic(selectedTopicId.value)
   } catch (e) { error.value = e.message } finally { loading.value = false }
 }
 
@@ -41,6 +43,7 @@ async function selectTopic(id) {
   if (fileInput.value) fileInput.value.value = ''
   error.value = ''
   success.value = ''
+  try { currentTopic.value = await getTeacherTopic(id) } catch (e) { error.value = e.message }
 }
 
 async function replaceTopic() {
@@ -85,6 +88,12 @@ onMounted(loadTopics)
         <label class="topic-upload"><span>选择 Excel 文件</span><input ref="fileInput" type="file" accept=".xlsx" @change="chooseFile"></label>
         <p class="helper-text">Excel 列：来源、题目截图、正确答案。来源填写完整标识，例如 DSE 2022 MT II (2)；答案为 A-D 时自动识别为选择题，留空时识别为非选择题。</p>
         <p v-if="error" class="error-message">{{ error }}</p><p v-if="success" class="success-message">{{ success }}</p><p v-if="busy" class="loading-state">正在处理…</p>
+        <section v-if="!preview && currentTopic?.questions?.length" class="current-topic-preview">
+          <div class="panel-heading"><div><h3>当前题目预览</h3><p class="muted">点击主题后直接查看当前已发布题目。</p></div></div>
+          <article v-for="question in currentTopic.questions" :key="question.id" class="question-preview-card">
+            <span class="question-number">{{ question.source_question_number || question.sort_order }}</span><div class="question-preview-body"><img :src="question.question_image_url" class="question-image" alt="题目截图" /><p class="helper-text">{{ question.source_reference }} · 原题第 {{ question.source_question_number }} 题 · {{ question.source_paper }}<template v-if="question.correct_option"> · 答案 {{ question.correct_option }}</template></p></div>
+          </article>
+        </section>
         <section v-if="preview" class="preview-panel">
           <div class="panel-heading"><div><h3>{{ preview.filename }}</h3><p>预览 {{ preview.question_count }} 题</p></div></div>
           <article v-for="question in preview.questions" :key="question.row_number" class="question-preview-card">
