@@ -3,58 +3,83 @@
 以英文教授數學，讓香港中學生在英語環境中練習數學。  
 Teach mathematics in English and collect class-level answer statistics.
 
-## 快速開始｜Quick start
+網站：<https://english-math-classroom.pages.dev>
 
-網站｜Web app: <https://english-math-classroom.pages.dev>
+## 老師使用說明
 
-### 老師｜Teacher
+### 題目管理
 
-1. 開啟網站，選擇「老師登入」。
-2. 在「題目管理」選擇主題並上傳 `.xlsx` 檔案；系統會先預覽，確認後發布題庫。
-3. 在「課堂／課後」選擇班級和題庫：
-   - 課堂答題：建立課堂並展示 QR Code，學生掃描加入後開始答題。
-   - 課後練習：建立練習碼，學生可使用練習碼進入。
-4. 在「習題統計」選擇班級和題庫，查看自主練習及課堂答題的合併結果。
-5. 在「單詞詞庫」按年級覆蓋上傳單詞，學生可按年級學習及複習。
+1. 進入「題目管理」，選擇要管理的主題。
+2. 上傳 Excel 檔案。系統會先顯示題目預覽，確認內容後再提交。
+3. 每一行是一道題目，包含題目截圖、正確答案和來源。
+4. 同一主題再次上傳會覆蓋目前題庫；舊批次的學生作答記錄仍會保留。
 
-### 學生｜Student
-
-1. 在首頁選擇「學生登入」，使用學號和密碼登入。
-2. 課堂答題：掃描老師展示的 QR Code，等待老師開始後作答。
-3. 課後練習：輸入練習碼，或直接從題庫選擇主題練習。
-4. 單詞模組：查看單詞和詞義後，選擇「忘記」「模糊」或「清楚記得」。
-
-## Excel 格式｜Excel format
-
-數學題目第一列使用以下欄位：
+Excel 欄位如下：
 
 | 題目截圖 | 正確答案 | 來源 |
 | --- | --- | --- |
 
-- `題目截圖` 填入題目圖片。
-- `正確答案` 填入 `A`、`B`、`C`、`D`；非選擇題可留空。
-- `來源` 填入完整來源，例如 `DSE 2018 MT II (4)`。系統會自動提取年份、原題號和試卷部分。
-- 同一主題再次上傳會覆蓋該主題的已發布題庫；學生既有作答記錄保留在原批次。
+- `題目截圖`：題目和選項的完整圖片。
+- `正確答案`：填寫 `A`、`B`、`C` 或 `D`；非選擇題可留空。
+- `來源`：填寫完整來源，例如 `DSE 2018 MT II (4)`。系統會提取年份、原題號和試卷部分，方便日後按年份搜尋。
 
-單詞檔案按目前單詞模板上傳；同一年級再次上傳會覆蓋該年級詞庫並重置該年級學習進度。
+### 建立數學課堂
 
-## Statistics
+1. 進入「課堂／課後」，選擇「數學課堂」。
+2. 選擇班級、題庫和每題作答時間，建立課堂。
+3. 將畫面上的 QR Code 分享給學生。學生掃描後會顯示已加入人數，仍可繼續讓其他學生掃描加入。
+4. 確認學生加入後，按「進入課堂」開始。學生會同步看到第一題。
+5. 老師可查看目前題目的作答分布，並按「下一題」切換；切題後學生端會清空上一題選項。
+6. 所有題目完成後，課堂會結束，可進入習題統計查看結果。
 
-- 統計按班級和最新題庫查看。
-- 課堂 QR Code、練習碼及學生直接進入題庫的作答會合併統計。
-- 每道選擇題顯示 A-D 選項分布、提交人數及正確率。
-- 非選擇題保留學生文字答案供老師查看，不進行自動判分。
+### 建立課後練習
 
-## Development
+1. 在「課堂／課後」選擇「課後練習」。
+2. 選擇題庫並建立練習碼。
+3. 將練習碼提供給學生。取得練習碼且已登入的學生都可以作答，不綁定特定學生。
+4. 學生完成後，作答會納入該班級和題庫的統計。
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+### 習題統計
 
-後端部署設定位於 `backend/wrangler.jsonc`；前端部署至 Cloudflare Pages，後端使用 Cloudflare Workers。
+1. 進入「習題統計」。
+2. 選擇班級和目前題庫。
+3. 系統會合併該班級透過課堂 QR Code、練習碼，以及直接進入題庫的作答。
+4. 每道選擇題會顯示 A-D 選項人數、比例、已作答人數和正確率。
+5. 非選擇題不自動判分，老師可在題目統計中查看學生提交的文字答案。
+
+## 學生使用說明
+
+### 登入
+
+1. 在首頁選擇「學生登入」。
+2. 使用學號和密碼登入；姓名、年級和班級由帳號資料帶入，不需要自行選擇。
+
+### 參加數學課堂
+
+1. 掃描老師展示的 QR Code。
+2. 登入後會看到等待畫面，老師開始課堂後才會進入答題。
+3. 查看題目圖片，選擇 A、B、C 或 D。課堂進行中不會立即顯示對錯。
+4. 老師切換題目後，上一題的選項會自動清空；倒數結束時系統會按老師的課堂進度切換。
+
+### 進行課後練習
+
+1. 輸入老師提供的練習碼，或從題庫選擇可用主題。
+2. 依序完成題目並提交。完成後可以重新練習，新的作答會按照統計規則記錄。
+
+### 學習單詞
+
+1. 進入「單詞」模組，自由選擇 S1 至 S6 的年級詞庫。
+2. 先在心中回想中文意思，再查看詞義。
+3. 選擇「忘記」「模糊」或「清楚記得」，系統會安排下次複習時間。
+4. 「學習」顯示尚未學習的單詞；「複習」顯示已學習且到期的單詞。
+
+## 老師與學生如何協同
+
+- 老師負責準備題庫、建立課堂或練習，並在統計頁查看整個班級的表現。
+- 學生使用自己的帳號參加課堂、課後練習或單詞學習。
+- 課堂使用 QR Code 即時同步；課後練習使用練習碼或題庫入口，完成後由系統自動匯總。
+- 同一學生在同一題庫的多次作答會按系統規則去重，避免統計重複計算。
 
 ## English summary
 
-Teachers upload image-based math questions, publish a topic, and run a live classroom or after-class practice. Students sign in with their student number, join by QR code or practice code, and answer on their phones. Teachers review merged class-level answer distributions and accuracy. A separate vocabulary module supports spaced review with three self-assessment ratings.
+Teachers manage image-based math question banks, run live QR-code classrooms, create after-class practice codes, and review class-level answer distributions. Students sign in with their student number, join a classroom or practice set, answer on their phones, and study vocabulary with three self-assessment ratings.
