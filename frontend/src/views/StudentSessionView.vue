@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { answerClassroom, getClassroom, joinClassroom } from '../api/client'
 const route = useRoute(); const token = String(route.params.token); const state = ref(null); const selected = ref(''); const error = ref(''); const now = ref(Date.now()); let timer; let clock
 const remaining = computed(() => { const deadline = state.value?.deadline_at; return deadline ? Math.max(0, Math.ceil((Date.parse(deadline) - now.value) / 1000)) : null })
+watch(() => state.value?.question?.id, () => { selected.value = '' })
 async function load() { try { state.value = await getClassroom(token); error.value = '' } catch (e) { if (!state.value) error.value = e.message } }
 async function submit(letter) { if (!state.value?.question || state.value.question_status !== 'open') return; try { await answerClassroom(token, { question_id: state.value.question.id, selected_option: letter }); selected.value = letter } catch (e) { error.value = e.message } }
 onMounted(async () => { try { await joinClassroom(token) } catch (e) { error.value = e.message } await load(); timer = setInterval(load, 2000); clock = setInterval(() => { now.value = Date.now() }, 250) }); onUnmounted(() => { clearInterval(timer); clearInterval(clock) })

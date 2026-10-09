@@ -672,7 +672,7 @@ async def teacher_practice_summary(
     if student_ids:
         classroom_status, sessions = await supabase_request(
             request, "GET", "/rest/v1/classroom_sessions", service_role=True,
-            params={"batch_id": f"eq.{batch_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id"},
+            params={"batch_id": f"eq.{batch_id}", "class_id": f"eq.{class_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id"},
         )
         if classroom_status >= 400:
             raise HTTPException(status_code=502, detail="无法读取课堂记录")
@@ -680,7 +680,7 @@ async def teacher_practice_summary(
         if session_ids:
             classroom_answer_status, classroom_answers = await supabase_request(
                 request, "GET", "/rest/v1/classroom_answers", service_role=True,
-                params={"session_id": f"in.({','.join(session_ids)})", "student_id": f"in.({','.join(student_ids)})", "select": "student_id,question_id,selected_option,is_correct,answered_at", "order": "answered_at.asc"},
+                params={"session_id": f"in.({','.join(session_ids)})", "select": "student_id,question_id,selected_option,is_correct,answered_at", "order": "answered_at.asc"},
             )
             if classroom_answer_status >= 400:
                 raise HTTPException(status_code=502, detail="无法读取课堂答案")
@@ -689,7 +689,19 @@ async def teacher_practice_summary(
                 previous = merged.get(key)
                 if not previous or (answer.get("answered_at") or "") >= (previous.get("answered_at") or ""):
                     merged[key] = answer
-    participant_ids = {student_id for student_id, _ in merged}
+            participant_status, participants = await supabase_request(
+                request, "GET", "/rest/v1/classroom_participants", service_role=True,
+                params={"session_id": f"in.({','.join(session_ids)})", "select": "student_id"},
+            )
+            if participant_status < 400:
+                merged_participant_ids = {row.get("student_id") for row in participants if row.get("student_id")}
+            else:
+                merged_participant_ids = set()
+        else:
+            merged_participant_ids = set()
+    else:
+        merged_participant_ids = set()
+    participant_ids = {student_id for student_id, _ in merged} | merged_participant_ids
     reports = []
     for question in questions:
         current = [answer for answer in merged.values() if answer.get("question_id") == question["id"]]
