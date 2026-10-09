@@ -452,6 +452,10 @@ async def import_topic(request: Request, topic_id: str = Form(...), file: Upload
 
 async def _classroom_payload(request: Request, session: dict[str, Any], *, include_answer: bool = False) -> dict[str, Any]:
     session = await _advance_classroom_if_expired(request, session)
+    if not session.get("batch_id"):
+        status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session['id']}", "select": "id,batch_id,status,current_question_id,question_status,duration_seconds,question_opened_at,deadline_at"})
+        if status < 400 and rows:
+            session = rows[0]
     question = None
     if session.get("current_question_id"):
         status, rows = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params={"id": f"eq.{session['current_question_id']}", "batch_id": f"eq.{session['batch_id']}", "select": "id,sort_order,question_type,image_bucket,image_path"})
@@ -513,9 +517,13 @@ async def join_classroom(access_token: str, request: Request, authorization: str
     if status >= 400 or not rows or rows[0]["status"] in {"closed", "invalidated"}:
         raise HTTPException(status_code=404, detail="课堂已结束或链接失效")
     session = rows[0]
-    join_status, _ = await supabase_request(request, "POST", "/rest/v1/classroom_participants", service_role=True, body={"session_id": session["id"], "student_id": student["id"]})
-    if join_status >= 400 and join_status != 409:
-        raise HTTPException(status_code=409, detail="无法加入课堂")
+    existing_status, existing = await supabase_request(request, "GET", "/rest/v1/classroom_participants", service_role=True, params={"session_id": f"eq.{session['id']}", "student_id": f"eq.{student['id']}", "select": "session_id"})
+    if existing_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取课堂参与状态")
+    if not existing:
+        join_status, _ = await supabase_request(request, "POST", "/rest/v1/classroom_participants", service_role=True, body={"session_id": session["id"], "student_id": student["id"]})
+        if join_status >= 400 and join_status != 409:
+            raise HTTPException(status_code=409, detail="无法加入课堂")
     return {"joined": True}
 
 
@@ -525,9 +533,14 @@ async def answer_classroom(access_token: str, payload: ClassroomAnswerRequest, r
     status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"access_token": f"eq.{access_token}", "select": "id,batch_id,status,current_question_id,question_status"})
     if status >= 400 or not rows or rows[0]["status"] != "active" or rows[0]["question_status"] != "open" or rows[0]["current_question_id"] != payload.question_id:
         raise HTTPException(status_code=409, detail="课堂题目已关闭")
-    answer_status, result = await supabase_request(request, "POST", "/rest/v1/classroom_answers", service_role=True, prefer_representation=True, body={"session_id": rows[0]["id"], "student_id": student["id"], "question_id": payload.question_id, "selected_option": payload.selected_option, "is_correct": False})
-    if answer_status >= 400:
-        answer_status, result = await supabase_request(request, "PATCH", "/rest/v1/classroom_answers", service_role=True, prefer_representation=True, params={"session_id": f"eq.{rows[0]['id']}", "student_id": f"eq.{student['id']}", "question_id": f"eq.{payload.question_id}"}, body={"selected_option": payload.selected_option})
+    answer_params = {"session_id": f"eq.{rows[0]['id']}", "student_id": f"eq.{student['id']}", "question_id": f"eq.{payload.question_id}"}
+    existing_status, existing = await supabase_request(request, "GET", "/rest/v1/classroom_answers", service_role=True, params={**answer_params, "select": "session_id"})
+    if existing_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取答题状态")
+    if existing:
+        answer_status, result = await supabase_request(request, "PATCH", "/rest/v1/classroom_answers", service_role=True, prefer_representation=True, params=answer_params, body={"selected_option": payload.selected_option})
+    else:
+        answer_status, result = await supabase_request(request, "POST", "/rest/v1/classroom_answers", service_role=True, prefer_representation=True, body={"session_id": rows[0]["id"], "student_id": student["id"], "question_id": payload.question_id, "selected_option": payload.selected_option, "is_correct": False})
     if answer_status >= 400:
         raise HTTPException(status_code=409, detail="答案提交失败")
     return {"submitted": True}
