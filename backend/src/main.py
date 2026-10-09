@@ -23,7 +23,7 @@ app = FastAPI(title="HHX English Math Classroom API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "https://english-math-classroom.pages.dev"],
     allow_origin_regex=r"https://[a-z0-9-]+\.pages\.dev",
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
@@ -451,6 +451,7 @@ async def import_topic(request: Request, topic_id: str = Form(...), file: Upload
 
 
 async def _classroom_payload(request: Request, session: dict[str, Any], *, include_answer: bool = False) -> dict[str, Any]:
+    session = await _advance_classroom_if_expired(request, session)
     question = None
     if session.get("current_question_id"):
         status, rows = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params={"id": f"eq.{session['current_question_id']}", "batch_id": f"eq.{session['batch_id']}", "select": "id,sort_order,question_type,image_bucket,image_path"})
@@ -465,6 +466,35 @@ async def _classroom_payload(request: Request, session: dict[str, Any], *, inclu
         if include_answer:
             question["distribution"] = {key: sum(1 for answer in answers if answer["selected_option"] == key) for key in "ABCD"}
     return {**session, "question": question, "participant_count": len(participants) if participant_status < 400 else 0, "submitted_count": answer_count}
+
+
+async def _advance_classroom_if_expired(request: Request, session: dict[str, Any]) -> dict[str, Any]:
+    if session.get("status") != "active" or not session.get("deadline_at"):
+        return session
+    try:
+        deadline = datetime.fromisoformat(session["deadline_at"].replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return session
+    if deadline > utc_now():
+        return session
+    status, links = await supabase_request(
+        request, "GET", "/rest/v1/classroom_session_questions", service_role=True,
+        params={"session_id": f"eq.{session['id']}", "select": "question_id,sort_order", "order": "sort_order.asc"},
+    )
+    if status >= 400:
+        return session
+    index = next((i for i, item in enumerate(links) if item["question_id"] == session.get("current_question_id")), -1)
+    now = utc_now()
+    duration = int(session.get("duration_seconds") or 60)
+    if index < 0 or index + 1 >= len(links):
+        body = {"status": "closed", "question_status": "locked", "closed_at": now.isoformat(), "question_opened_at": None, "deadline_at": None}
+    else:
+        body = {"status": "active", "current_question_id": links[index + 1]["question_id"], "question_status": "open", "question_opened_at": now.isoformat(), "deadline_at": (now + timedelta(seconds=duration)).isoformat()}
+    update_status, updated = await supabase_request(
+        request, "PATCH", "/rest/v1/classroom_sessions", service_role=True, prefer_representation=True,
+        params={"id": f"eq.{session['id']}", "current_question_id": f"eq.{session.get('current_question_id')}"}, body=body,
+    )
+    return updated[0] if update_status < 400 and updated else session
 
 
 @app.get("/api/classroom/{access_token}")
@@ -506,11 +536,11 @@ async def answer_classroom(access_token: str, payload: ClassroomAnswerRequest, r
 @app.post("/api/teacher/classrooms/{session_id}/start")
 async def start_new_classroom(session_id: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     token = bearer_token(authorization); teacher = await current_teacher_profile(request, token)
-    status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,batch_id,status"})
+    status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,batch_id,status,duration_seconds"})
     if status >= 400 or not rows: raise HTTPException(status_code=404, detail="找不到课堂")
     _, questions = await supabase_request(request, "GET", "/rest/v1/classroom_session_questions", service_role=True, params={"session_id": f"eq.{session_id}", "select": "question_id,sort_order", "order": "sort_order.asc"})
     if not questions: raise HTTPException(status_code=409, detail="课堂没有题目")
-    now = utc_now(); update_status, result = await supabase_request(request, "PATCH", "/rest/v1/classroom_sessions", service_role=True, prefer_representation=True, params={"id": f"eq.{session_id}"}, body={"status": "active", "current_question_id": questions[0]["question_id"], "question_status": "open", "question_opened_at": now.isoformat(), "deadline_at": (now + timedelta(seconds=60)).isoformat()})
+    now = utc_now(); duration = int(rows[0].get("duration_seconds") or 60); update_status, result = await supabase_request(request, "PATCH", "/rest/v1/classroom_sessions", service_role=True, prefer_representation=True, params={"id": f"eq.{session_id}"}, body={"status": "active", "current_question_id": questions[0]["question_id"], "question_status": "open", "question_opened_at": now.isoformat(), "deadline_at": (now + timedelta(seconds=duration)).isoformat()})
     if update_status >= 400: raise HTTPException(status_code=502, detail="课堂启动失败")
     return result[0]
 
@@ -518,16 +548,16 @@ async def start_new_classroom(session_id: str, request: Request, authorization: 
 @app.post("/api/teacher/classrooms/{session_id}/next")
 async def next_new_classroom(session_id: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     token = bearer_token(authorization); teacher = await current_teacher_profile(request, token)
-    status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,status,current_question_id"})
+    status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,status,current_question_id,duration_seconds"})
     if status >= 400 or not rows: raise HTTPException(status_code=404, detail="找不到课堂")
     session = rows[0]
     _, questions = await supabase_request(request, "GET", "/rest/v1/classroom_session_questions", service_role=True, params={"session_id": f"eq.{session_id}", "select": "question_id,sort_order", "order": "sort_order.asc"})
     index = next((i for i, q in enumerate(questions) if q["question_id"] == session.get("current_question_id")), -1)
-    now = utc_now()
+    now = utc_now(); duration = int(session.get("duration_seconds") or 60)
     if index < 0 or index + 1 >= len(questions):
         body = {"status": "closed", "question_status": "locked", "closed_at": now.isoformat(), "question_opened_at": None, "deadline_at": None}
     else:
-        body = {"status": "active", "current_question_id": questions[index + 1]["question_id"], "question_status": "open", "question_opened_at": now.isoformat(), "deadline_at": (now + timedelta(seconds=60)).isoformat()}
+        body = {"status": "active", "current_question_id": questions[index + 1]["question_id"], "question_status": "open", "question_opened_at": now.isoformat(), "deadline_at": (now + timedelta(seconds=duration)).isoformat()}
     updated_status, result = await supabase_request(request, "PATCH", "/rest/v1/classroom_sessions", service_role=True, prefer_representation=True, params={"id": f"eq.{session_id}"}, body=body)
     if updated_status >= 400: raise HTTPException(status_code=502, detail="切换课堂题目失败")
     return result[0]
@@ -536,7 +566,7 @@ async def next_new_classroom(session_id: str, request: Request, authorization: s
 @app.get("/api/teacher/classrooms/{session_id}/stats")
 async def new_classroom_stats(session_id: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     token = bearer_token(authorization); teacher = await current_teacher_profile(request, token)
-    status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,status,current_question_id,question_status,duration_seconds,question_opened_at,deadline_at"})
+    status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,batch_id,status,current_question_id,question_status,duration_seconds,question_opened_at,deadline_at"})
     if status >= 400 or not rows: raise HTTPException(status_code=404, detail="找不到课堂")
     return await _classroom_payload(request, rows[0], include_answer=True)
 
