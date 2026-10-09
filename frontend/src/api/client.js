@@ -105,6 +105,7 @@ export async function importWords(gradeId, file) { const body = new FormData(); 
 export async function getTeacherWords() { return apiRequest('/api/teacher/words') }
 export async function getTeacherReports() { return apiRequest('/api/teacher/reports') }
 export async function getTeacherReport(kind, id) { return apiRequest(`/api/teacher/reports/${kind}/${id}`) }
+export async function getTeacherPracticeSummary(classId, batchId) { return apiRequest(`/api/teacher/reports/practice-summary?class_id=${encodeURIComponent(classId)}&batch_id=${encodeURIComponent(batchId)}`) }
 
 export async function getCurrentTeacher() {
   return apiRequest('/api/auth/me')

@@ -557,6 +557,83 @@ async def teacher_report_index(request: Request, authorization: str | None = Hea
     return sorted(result, key=lambda row: row.get("created_at") or "", reverse=True)
 
 
+@app.get("/api/teacher/reports/practice-summary")
+async def teacher_practice_summary(
+    request: Request,
+    class_id: str,
+    batch_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    teacher = await current_teacher_profile(request, token)
+    class_status, classes = await supabase_request(
+        request, "GET", "/rest/v1/classes", service_role=True,
+        params={"id": f"eq.{class_id}", "school_id": f"eq.{teacher['school_id']}", "is_active": "eq.true", "select": "id,code,name,grade_id,grades(code,name)"},
+    )
+    if class_status >= 400 or not classes:
+        raise HTTPException(status_code=404, detail="找不到可用班级")
+    batch_status, batches = await supabase_request(
+        request, "GET", "/rest/v1/math_batches", service_role=True,
+        params={"id": f"eq.{batch_id}", "status": "eq.published", "select": "id,topic_id,topics!inner(code,name,school_id)"},
+    )
+    if batch_status >= 400 or not batches or batches[0].get("topics", {}).get("school_id") != teacher["school_id"]:
+        raise HTTPException(status_code=404, detail="找不到当前题库")
+    students_status, students = await supabase_request(
+        request, "GET", "/rest/v1/students", service_role=True,
+        params={"class_id": f"eq.{class_id}", "is_active": "eq.true", "select": "id,name,student_number", "order": "student_number.asc"},
+    )
+    if students_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取班级学生")
+    student_ids = [student["id"] for student in students]
+    rounds: list[dict[str, Any]] = []
+    if student_ids:
+        round_status, rounds = await supabase_request(
+            request, "GET", "/rest/v1/practice_rounds", service_role=True,
+            params={"batch_id": f"eq.{batch_id}", "student_id": f"in.({','.join(student_ids)})", "status": "eq.completed", "select": "id,student_id,completed_at", "order": "completed_at.desc"},
+        )
+        if round_status >= 400:
+            raise HTTPException(status_code=502, detail="无法读取班级答题记录")
+    latest_round_ids: list[str] = []
+    latest_students: set[str] = set()
+    for round_row in rounds:
+        student_id = round_row.get("student_id")
+        if student_id and student_id not in latest_students:
+            latest_students.add(student_id)
+            latest_round_ids.append(round_row["id"])
+    answers: list[dict[str, Any]] = []
+    if latest_round_ids:
+        answer_status, answers = await supabase_request(
+            request, "GET", "/rest/v1/practice_answers", service_role=True,
+            params={"round_id": f"in.({','.join(latest_round_ids)})", "state": "in.(confirmed,unanswered)", "select": "question_id,selected_option,is_correct,round_id"},
+        )
+        if answer_status >= 400:
+            raise HTTPException(status_code=502, detail="无法读取题目答案")
+    question_status, questions = await supabase_request(
+        request, "GET", "/rest/v1/questions", service_role=True,
+        params={"batch_id": f"eq.{batch_id}", "select": "id,sort_order,question_type,correct_option", "order": "sort_order.asc"},
+    )
+    if question_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取题库题目")
+    reports = []
+    for question in questions:
+        current = [answer for answer in answers if answer.get("question_id") == question["id"]]
+        distribution = {key: sum(1 for answer in current if answer.get("selected_option") == key) for key in "ABCD"}
+        correct_count = sum(1 for answer in current if answer.get("is_correct") is True)
+        answered_count = sum(1 for answer in current if answer.get("selected_option") or answer.get("is_correct") is not None)
+        reports.append({
+            "id": question["id"], "sort_order": question["sort_order"], "question_type": question["question_type"],
+            "correct_option": question.get("correct_option"), "submitted_count": answered_count,
+            "unanswered_count": max(len(latest_round_ids) - answered_count, 0), "correct_count": correct_count,
+            "accuracy": round(correct_count / answered_count * 100, 1) if answered_count else 0, "distribution": distribution,
+        })
+    topic = batches[0].get("topics") or {}
+    return {
+        "title": f"{topic.get('code', '')} {topic.get('name', '')}",
+        "class": classes[0], "batch_id": batch_id, "student_count": len(students),
+        "completed_count": len(latest_round_ids), "participant_count": len(latest_round_ids), "questions": reports,
+    }
+
+
 @app.get("/api/teacher/reports/{kind}/{item_id}")
 async def teacher_report(kind: str, item_id: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     token = bearer_token(authorization); teacher = await current_teacher_profile(request, token)
@@ -570,9 +647,20 @@ async def teacher_report(kind: str, item_id: str, request: Request, authorizatio
     elif kind == "practice":
         status, practices = await supabase_request(request, "GET", "/rest/v1/practices", service_role=True, params={"id": f"eq.{item_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,batch_id,access_code,status,created_at"})
         if status >= 400 or not practices: raise HTTPException(status_code=404, detail="找不到练习")
-        session = practices[0]; _, links = await supabase_request(request, "GET", "/rest/v1/practice_questions", service_role=True, params={"practice_id": f"eq.{item_id}", "select": "question_id,sort_order", "order": "sort_order.asc"})
-        _, answers = await supabase_request(request, "GET", "/rest/v1/practice_answers", service_role=True, params={"question_id": f"in.({','.join(link['question_id'] for link in links)})", "state": "in.(confirmed,unanswered)", "select": "question_id,selected_option,is_correct,round_id"}) if links else (200, [])
-        total = len({answer.get("round_id") for answer in answers})
+        session = practices[0]
+        _, links = await supabase_request(request, "GET", "/rest/v1/practice_questions", service_role=True, params={"practice_id": f"eq.{item_id}", "select": "question_id,sort_order", "order": "sort_order.asc"})
+        round_status, rounds = await supabase_request(request, "GET", "/rest/v1/practice_rounds", service_role=True, params={"practice_id": f"eq.{item_id}", "status": "eq.completed", "select": "id,student_id,completed_at", "order": "completed_at.desc"})
+        if round_status >= 400:
+            raise HTTPException(status_code=502, detail="无法读取课后练习轮次")
+        latest_round_ids: list[str] = []
+        latest_students: set[str] = set()
+        for round_row in rounds:
+            student_id = round_row.get("student_id")
+            if student_id and student_id not in latest_students:
+                latest_students.add(student_id)
+                latest_round_ids.append(round_row["id"])
+        _, answers = await supabase_request(request, "GET", "/rest/v1/practice_answers", service_role=True, params={"round_id": f"in.({','.join(latest_round_ids)})", "state": "in.(confirmed,unanswered)", "select": "question_id,selected_option,is_correct,round_id"}) if latest_round_ids else (200, [])
+        total = len(latest_round_ids)
         title = f"练习码 {session['access_code']}"
     else: raise HTTPException(status_code=404, detail="统计类型无效")
     question_ids = [link["question_id"] for link in links]

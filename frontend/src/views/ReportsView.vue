@@ -1,11 +1,80 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { getTeacherReport, getTeacherReports } from '../api/client'
-const items = ref([]); const selected = ref(null); const report = ref(null); const loading = ref(true); const error = ref(''); const filter = ref('all')
-const visible = computed(() => items.value.filter(item => filter.value === 'all' || item.kind === filter.value))
-function formatDate(value) { return value ? new Intl.DateTimeFormat('zh-HK', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '未记录时间' }
-async function open(item) { selected.value = item; report.value = null; try { report.value = await getTeacherReport(item.kind, item.id) } catch (e) { error.value = e.message } }
-async function load() { loading.value = true; try { items.value = await getTeacherReports(); if (visible.value[0]) await open(visible.value[0]) } catch (e) { error.value = e.message } finally { loading.value = false } }
+import { onMounted, ref } from 'vue'
+import { getClasses, getTeacherPracticeSummary, getTeacherTopics } from '../api/client'
+
+const classes = ref([])
+const topics = ref([])
+const selectedClassId = ref('')
+const selectedBatchId = ref('')
+const report = ref(null)
+const loading = ref(true)
+const loadingReport = ref(false)
+const error = ref('')
+
+async function loadReport() {
+  if (!selectedClassId.value || !selectedBatchId.value) {
+    report.value = null
+    return
+  }
+  loadingReport.value = true
+  error.value = ''
+  try {
+    report.value = await getTeacherPracticeSummary(selectedClassId.value, selectedBatchId.value)
+  } catch (e) {
+    report.value = null
+    error.value = e.message
+  } finally {
+    loadingReport.value = false
+  }
+}
+
+async function load() {
+  loading.value = true
+  error.value = ''
+  try {
+    const [classRows, topicRows] = await Promise.all([getClasses(), getTeacherTopics()])
+    classes.value = classRows
+    topics.value = topicRows.filter(item => item.batch_id)
+    selectedClassId.value = classes.value[0]?.id || ''
+    selectedBatchId.value = topics.value[0]?.batch_id || ''
+    await loadReport()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
+
+function percent(count, total) {
+  return total ? `${Math.round(count / total * 100)}%` : '0%'
+}
+
 onMounted(load)
 </script>
-<template><main class="app-shell"><header class="topbar"><div><RouterLink class="back-link-inline" to="/teacher">← 返回老师工作台</RouterLink><p class="eyebrow">REPORTS</p><h1>习题统计</h1><p class="muted">课堂按学生去重；练习按每位学生最后完成轮次统计。</p></div></header><p v-if="loading" class="loading-state">正在读取统计…</p><p v-else-if="error" class="error-message">{{ error }}</p><section v-else class="reports-layout"><div class="report-tabs"><button class="choice-card" :class="{ active: filter === 'all' }" @click="filter = 'all'">全部</button><button class="choice-card" :class="{ active: filter === 'classroom' }" @click="filter = 'classroom'">课堂</button><button class="choice-card" :class="{ active: filter === 'practice' }" @click="filter = 'practice'">练习</button><button class="secondary-button" @click="load">重新整理</button></div><div class="reports-layout-inner"><aside class="report-sessions"><button v-for="item in visible" :key="`${item.kind}-${item.id}`" class="choice-row" :class="{ active: selected?.id === item.id }" @click="open(item)"><span>{{ item.title }}<small>{{ item.subtitle }}</small><small>{{ formatDate(item.created_at) }}</small></span></button><p v-if="!visible.length" class="empty-state">暂无统计记录。</p></aside><section class="report-panel"><template v-if="report"><div class="report-context"><strong>{{ report.title }}</strong><span>参与人数：{{ report.participant_count }}</span></div><article v-for="question in report.questions" :key="question.id" class="report-question"><div class="report-question-heading"><div><span class="question-number">{{ question.sort_order }}</span><strong>{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }}</strong></div><span>正确率 {{ question.accuracy }}%</span></div><p class="correct-answer">正确答案：<strong>{{ question.correct_option || '不判分' }}</strong></p><div class="report-bars"><div v-for="key in ['A','B','C','D']" :key="key" class="report-bar"><span>{{ key }}</span><div><i :style="{ width: `${question.submitted_count ? question.distribution[key] / question.submitted_count * 100 : 0}%` }"></i></div><b>{{ question.distribution[key] }}</b></div></div><p class="helper-text">已作答 {{ question.submitted_count }} 人，答对 {{ question.correct_count }} 人</p></article></template><p v-else class="empty-state">请选择一项统计。</p></section></div></section></main></template>
+
+<template>
+  <main class="app-shell">
+    <header class="topbar">
+      <div><RouterLink class="back-link-inline" to="/teacher">← 返回老师工作台</RouterLink><p class="eyebrow">REPORTS</p><h1>习题统计</h1><p class="muted">选择班级和当前题库，合并查看自主练习与练习码作答。</p></div>
+    </header>
+    <p v-if="loading" class="loading-state">正在读取统计资料…</p>
+    <p v-else-if="error && !report" class="error-message">{{ error }}</p>
+    <section v-else class="detail-panel report-workspace">
+      <div class="report-filters">
+        <label><span>班级</span><select v-model="selectedClassId" class="text-input" @change="loadReport"><option v-for="item in classes" :key="item.id" :value="item.id">{{ item.grades?.name }} · {{ item.name }}</option></select></label>
+        <label><span>当前题库</span><select v-model="selectedBatchId" class="text-input" @change="loadReport"><option v-for="item in topics" :key="item.batch_id" :value="item.batch_id">{{ item.code }} · {{ item.name }}</option></select></label>
+      </div>
+      <p v-if="loadingReport" class="loading-state">正在计算班级统计…</p>
+      <template v-else-if="report">
+        <div class="report-context"><strong>{{ report.title }}</strong><span>{{ report.class?.name }} · 班级人数 {{ report.student_count }} · 已完成 {{ report.completed_count }} 人</span></div>
+        <article v-for="question in report.questions" :key="question.id" class="report-question">
+          <div class="report-question-heading"><div><span class="question-number">{{ question.sort_order }}</span><strong>{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }}</strong></div><span>正确率 {{ question.accuracy }}%</span></div>
+          <p class="correct-answer">正确答案：<strong>{{ question.correct_option || '不判分' }}</strong> · 已作答 {{ question.submitted_count }} 人 · 未作答 {{ question.unanswered_count }} 人</p>
+          <div class="report-bars"><div v-for="key in ['A','B','C','D']" :key="key" class="report-bar"><span>{{ key }}</span><div><i :style="{ width: percent(question.distribution[key], question.submitted_count) }"></i></div><b>{{ question.distribution[key] }}（{{ percent(question.distribution[key], question.submitted_count) }}）</b></div></div>
+          <p class="helper-text">答对 {{ question.correct_count }} 人</p>
+        </article>
+      </template>
+      <p v-else class="empty-state">请选择班级和题库查看统计。</p>
+    </section>
+  </main>
+</template>
