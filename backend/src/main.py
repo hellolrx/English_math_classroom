@@ -739,30 +739,80 @@ async def teacher_words(request: Request, authorization: str | None = Header(def
     return [{**row, "word_count": (row.get("words") or [{"count": 0}])[0].get("count", 0)} for row in rows]
 
 
+def parse_word_upload(content: bytes) -> tuple[list[tuple[str, str]], list[str]]:
+    from io import BytesIO
+    from openpyxl import load_workbook
+
+    try:
+        rows = list(load_workbook(filename=BytesIO(content), read_only=True, data_only=True).active.iter_rows(values_only=True))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="无法读取 Excel 文件") from exc
+    if not rows or len(rows[0]) < 2:
+        raise HTTPException(status_code=422, detail="单词表必须包含单词、词义两列")
+    headers = [str(value or '').strip().lower() for value in rows[0]]
+    try:
+        word_col = next(i for i, value in enumerate(headers) if value in {'单词', 'word'})
+        meaning_col = next(i for i, value in enumerate(headers) if value in {'词义', '词意', 'meaning', '中文'})
+    except StopIteration as exc:
+        raise HTTPException(status_code=422, detail="单词表必须包含“单词”和“词义”列") from exc
+
+    words: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    errors: list[str] = []
+    for row_number, row in enumerate(rows[1:], start=2):
+        word = str(row[word_col] or '').strip() if word_col < len(row) else ''
+        meaning = str(row[meaning_col] or '').strip() if meaning_col < len(row) else ''
+        if not word and not meaning:
+            continue
+        if not word or not meaning:
+            errors.append(f"第 {row_number} 行：单词和词义不能为空")
+            continue
+        normalized = word.casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        words.append((word, meaning))
+    if errors:
+        raise HTTPException(status_code=422, detail={"message": "Excel 文件存在错误", "errors": errors})
+    if not words:
+        raise HTTPException(status_code=422, detail="没有可导入的单词")
+    return words, errors
+
+
+async def ensure_teacher_grade(request: Request, teacher: dict[str, Any], grade_id: str) -> None:
+    _, grades = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/grades",
+        service_role=True,
+        params={"id": f"eq.{grade_id}", "school_id": f"eq.{teacher['school_id']}", "select": "id"},
+    )
+    if not grades:
+        raise HTTPException(status_code=404, detail="找不到年级")
+
+
+@app.post("/api/teacher/words/preview")
+async def preview_words(request: Request, grade_id: str = Form(...), file: UploadFile = File(...), authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    teacher = await current_teacher_profile(request, token)
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=422, detail="只支持 .xlsx 格式的 Excel 文件")
+    await ensure_teacher_grade(request, teacher, grade_id)
+    words, _ = parse_word_upload(await file.read())
+    return {
+        "filename": file.filename,
+        "grade_id": grade_id,
+        "word_count": len(words),
+        "words": [{"word": word, "meaning": meaning, "sort_order": index} for index, (word, meaning) in enumerate(words, start=1)],
+    }
+
+
 @app.post("/api/teacher/words/import")
 async def import_words(request: Request, grade_id: str = Form(...), file: UploadFile = File(...), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     token = bearer_token(authorization); teacher = await current_teacher_profile(request, token)
     if not file.filename or not file.filename.lower().endswith(".xlsx"): raise HTTPException(status_code=422, detail="只支持 .xlsx 格式的 Excel 文件")
-    from openpyxl import load_workbook
-    from io import BytesIO
-    try: rows = list(load_workbook(filename=BytesIO(await file.read()), read_only=True, data_only=True).active.iter_rows(values_only=True))
-    except Exception as exc: raise HTTPException(status_code=422, detail="无法读取 Excel 文件") from exc
-    if not rows or len(rows[0]) < 2: raise HTTPException(status_code=422, detail="单词表必须包含单词、词义两列")
-    headers = [str(value or '').strip().lower() for value in rows[0]]
-    try: word_col = next(i for i, value in enumerate(headers) if value in {'单词','word'}) ; meaning_col = next(i for i, value in enumerate(headers) if value in {'词义','词意','meaning','中文'})
-    except StopIteration as exc: raise HTTPException(status_code=422, detail="单词表必须包含“单词”和“词义”列") from exc
-    words = []; seen = set(); errors = []
-    for row_number, row in enumerate(rows[1:], start=2):
-        word = str(row[word_col] or '').strip() if word_col < len(row) else ''; meaning = str(row[meaning_col] or '').strip() if meaning_col < len(row) else ''
-        if not word and not meaning: continue
-        normalized = word.casefold()
-        if not word or not meaning: errors.append(f"第 {row_number} 行：单词和词义不能为空"); continue
-        if normalized in seen: continue
-        seen.add(normalized); words.append((word, meaning))
-    if errors: raise HTTPException(status_code=422, detail={"message": "Excel 文件存在错误", "errors": errors})
-    if not words: raise HTTPException(status_code=422, detail="没有可导入的单词")
-    _, grades = await supabase_request(request, "GET", "/rest/v1/grades", service_role=True, params={"id": f"eq.{grade_id}", "school_id": f"eq.{teacher['school_id']}", "select": "id"})
-    if not grades: raise HTTPException(status_code=404, detail="找不到年级")
+    words, _ = parse_word_upload(await file.read())
+    await ensure_teacher_grade(request, teacher, grade_id)
     job_id, batch_id = str(uuid4()), str(uuid4())
     await supabase_request(request, "POST", "/rest/v1/import_jobs", service_role=True, body={"id": job_id, "created_by": teacher["user_id"], "kind": "words", "grade_id": grade_id, "filename": file.filename, "status": "preview"})
     batch_status, _ = await supabase_request(request, "POST", "/rest/v1/word_batches", service_role=True, body={"id": batch_id, "grade_id": grade_id, "created_by": teacher["user_id"], "import_job_id": job_id, "status": "draft"})
