@@ -90,9 +90,30 @@ class BusinessFlows(unittest.IsolatedAsyncioTestCase):
         ])
         with patch.object(api, "supabase_request", database):
             words = await api.student_words(self.request, "S6", "Bearer token")
-        self.assertEqual(words, [{"id": "new"}])
+        self.assertEqual(words, {
+            "words": [{"id": "new"}], "all_words": [{"id": "learned"}, {"id": "new"}],
+            "student_id": "student", "total_count": 2, "learned_count": 1,
+        })
         self.assertEqual(database.call_args_list[-1].kwargs["params"]["student_id"], "eq.student")
         self.assertEqual(database.call_args_list[-1].kwargs["params"]["words.grade_id"], "eq.s6-grade")
+
+    async def test_empty_bank_and_all_learned_have_distinct_counts(self):
+        for total, learned in [(0, 0), (1, 1)]:
+            with self.subTest(total=total):
+                rows = [{"id": "word"}] if total else []
+                progress = [{"word_id": "word"}] if learned else []
+                database = AsyncMock(side_effect=[(200, [{"id": "s1-grade"}]), (200, rows), (200, progress)])
+                with patch.object(api, "supabase_request", database):
+                    result = await api.student_words(self.request, "S1", "Bearer token")
+                self.assertEqual(result["words"], [])
+                self.assertEqual(result["total_count"], total)
+                self.assertEqual(result["learned_count"], learned)
+
+    async def test_learning_rating_keeps_existing_schedule_rpc(self):
+        database = AsyncMock(return_value=(200, {"ok": True}))
+        with patch.object(api, "supabase_request", database):
+            await api.rate_student_word(api.WordRatingRequest(word_id="word", rating="clear"), self.request, "Bearer token")
+        self.assertEqual(database.call_args.args[2], "/rest/v1/rpc/app_rate_word")
 
     async def test_stats_merge_classroom_by_student_class_and_count_text(self):
         database = AsyncMock(side_effect=[

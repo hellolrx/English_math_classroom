@@ -751,7 +751,7 @@ async def teacher_report(kind: str, item_id: str, request: Request, authorizatio
 
 
 @app.get("/api/student/words")
-async def student_words(request: Request, grade_id: str, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+async def student_words(request: Request, grade_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     student = await verify_student_token(request, authorization)
     grade_status, grades = await supabase_request(request, "GET", "/rest/v1/grades", service_role=True, params={"code": f"eq.{grade_id.upper()}", "school_id": f"eq.{student['school_id']}", "is_active": "eq.true", "select": "id"})
     if grade_status >= 400 or not grades:
@@ -764,7 +764,8 @@ async def student_words(request: Request, grade_id: str, authorization: str | No
     if progress_status >= 400:
         raise HTTPException(status_code=502, detail="无法读取单词学习进度")
     learned_ids = {item["word_id"] for item in progress}
-    return [word for word in rows if word["id"] not in learned_ids]
+    unlearned = [word for word in rows if word["id"] not in learned_ids]
+    return {"words": unlearned, "all_words": rows, "student_id": student["id"], "total_count": len(rows), "learned_count": len(rows) - len(unlearned)}
 
 
 @app.get("/api/student/words/review")
