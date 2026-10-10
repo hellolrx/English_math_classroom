@@ -111,9 +111,8 @@ export async function getCurrentTeacher() {
   return apiRequest('/api/auth/me')
 }
 
-export async function getClasses() {
-  return apiRequest('/api/classes')
-}
+export async function getTeacherGrades() { return apiRequest('/api/teacher/grades') }
+export async function getClasses() { return apiRequest('/api/teacher/classes') }
 
 export async function createSession(payload) {
   return apiRequest('/api/sessions', { method: 'POST', body: JSON.stringify(payload) })

@@ -1107,5 +1107,31 @@ async def current_teacher(
     return profile
 
 
+@app.get("/api/teacher/grades")
+async def teacher_grades(request: Request, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    token = bearer_token(authorization)
+    teacher = await current_teacher_profile(request, token)
+    status, grades = await supabase_request(
+        request, "GET", "/rest/v1/grades", service_role=True,
+        params={"school_id": f"eq.{teacher['school_id']}", "is_active": "eq.true", "select": "id,code,name,sort_order", "order": "sort_order.asc"},
+    )
+    if status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取年级")
+    return grades
+
+
+@app.get("/api/teacher/classes")
+async def teacher_classes(request: Request, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    token = bearer_token(authorization)
+    teacher = await current_teacher_profile(request, token)
+    status, classes = await supabase_request(
+        request, "GET", "/rest/v1/classes", service_role=True,
+        params={"school_id": f"eq.{teacher['school_id']}", "is_active": "eq.true", "select": "id,code,name,grade_id,grades(code,name)", "order": "grade_id.asc,code.asc"},
+    )
+    if status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取班级")
+    return classes
+
+
 
 Default = asgi.entrypoint(app)
