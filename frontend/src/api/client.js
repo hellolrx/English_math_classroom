@@ -104,6 +104,7 @@ export async function rateStudentWord(payload) { return apiRequest('/api/student
 export async function previewWords(gradeId, file) { const body = new FormData(); body.append('grade_id', gradeId); body.append('file', file); return apiRequest('/api/teacher/words/preview', { method: 'POST', body }) }
 export async function importWords(gradeId, file) { const body = new FormData(); body.append('grade_id', gradeId); body.append('file', file); return apiRequest('/api/teacher/words/import', { method: 'POST', body }) }
 export async function getTeacherWords() { return apiRequest('/api/teacher/words') }
+export async function getTeacherWordBatch(id) { return apiRequest(`/api/teacher/words/${encodeURIComponent(id)}`) }
 export async function getTeacherReports() { return apiRequest('/api/teacher/reports') }
 export async function getTeacherReport(kind, id) { return apiRequest(`/api/teacher/reports/${kind}/${id}`) }
 export async function getTeacherPracticeSummary(classId, batchId) { return apiRequest(`/api/teacher/reports/practice-summary?class_id=${encodeURIComponent(classId)}&batch_id=${encodeURIComponent(batchId)}`) }

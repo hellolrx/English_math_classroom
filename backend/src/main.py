@@ -739,6 +739,32 @@ async def teacher_words(request: Request, authorization: str | None = Header(def
     return [{**row, "word_count": (row.get("words") or [{"count": 0}])[0].get("count", 0)} for row in rows]
 
 
+@app.get("/api/teacher/words/{batch_id}")
+async def teacher_word_batch(batch_id: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    token = bearer_token(authorization)
+    teacher = await current_teacher_profile(request, token)
+    status, rows = await supabase_request(
+        request,
+        "GET",
+        "/rest/v1/word_batches",
+        service_role=True,
+        params={
+            "id": f"eq.{batch_id}",
+            "status": "eq.published",
+            "grades.school_id": f"eq.{teacher['school_id']}",
+            "select": "id,grade_id,created_at,grades(code,name),words(id,word,meaning,sort_order)",
+        },
+    )
+    if status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取词库内容")
+    if not rows:
+        raise HTTPException(status_code=404, detail="找不到已发布词库")
+    row = rows[0]
+    row["words"] = sorted(row.get("words") or [], key=lambda item: item.get("sort_order", 0))
+    row["word_count"] = len(row["words"])
+    return row
+
+
 def parse_word_upload(content: bytes) -> tuple[list[tuple[str, str]], list[str]]:
     from io import BytesIO
     from openpyxl import load_workbook
