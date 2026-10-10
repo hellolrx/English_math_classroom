@@ -72,9 +72,10 @@ onMounted(load)
       <template v-else-if="report">
         <div class="report-context"><strong>{{ report.title }}</strong><span>{{ report.class?.name }} · 班级人数 {{ report.student_count }} · 有作答 {{ report.participant_count }} 人</span></div>
         <article v-for="question in report.questions" :key="question.id" class="report-question">
-          <div class="report-question-heading"><div><span class="question-number">{{ question.sort_order }}</span><strong>{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }}</strong></div><span>正确率 {{ question.accuracy }}%</span></div>
-          <p class="correct-answer">正确答案：<strong>{{ question.correct_option || '不判分' }}</strong> · 已作答 {{ question.submitted_count }} 人 · 未作答 {{ question.unanswered_count }} 人</p>
-          <div class="report-bars"><div v-for="key in ['A','B','C','D']" :key="key" class="report-bar"><span>{{ key }}</span><div><i :style="{ width: percent(question.distribution[key], question.submitted_count) }"></i></div><b><strong>{{ question.distribution[key] }}</strong><small>{{ percent(question.distribution[key], question.submitted_count) }}</small></b></div></div>
+          <div class="report-question-heading"><div><span class="question-number">{{ question.sort_order }}</span><strong>{{ question.question_type === 'single_choice' ? '选择题' : '非选择题' }}</strong></div><span v-if="question.question_type === 'single_choice'">正确率 {{ question.accuracy }}%</span></div>
+          <p class="correct-answer">{{ question.question_type === 'single_choice' ? `正确答案：${question.correct_option}` : '不自动判分' }} · 已作答 {{ question.submitted_count }} 人 · 未作答 {{ question.unanswered_count }} 人</p>
+          <div v-if="question.question_type === 'single_choice'" class="report-bars"><div v-for="key in ['A','B','C','D']" :key="key" class="report-bar"><span>{{ key }}</span><div><i :style="{ width: percent(question.distribution[key], question.submitted_count) }"></i></div><b><strong>{{ question.distribution[key] }}</strong><small>{{ percent(question.distribution[key], question.submitted_count) }}</small></b></div></div>
+          <div v-if="question.question_type !== 'single_choice'" class="text-answer-list"><p class="helper-text">文字答案</p><p v-if="!question.text_answers?.length" class="empty-state">目前没有文字答案。</p><div v-for="answer in question.text_answers" :key="`${question.id}-${answer.student_id}`" class="text-answer-row"><strong>{{ answer.name || '未命名学生' }}</strong><span>{{ answer.student_number || '无学号' }} · {{ answer.class?.name || answer.class?.code || '无班级' }}</span><p>{{ answer.answer }}</p></div></div>
           <p class="helper-text">答对 {{ question.correct_count }} 人</p>
         </article>
       </template>

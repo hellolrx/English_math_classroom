@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { finishStudentRound, saveStudentRoundAnswer, startStudentRound } from '../api/client'
+import DraftCanvas from '../components/DraftCanvas.vue'
 
 const props = defineProps({ mode: { type: String, required: true } })
 const route = useRoute()
@@ -197,6 +198,7 @@ onBeforeUnmount(() => {
         </button>
         <button v-else class="primary-button" @click="restart">重新練習</button>
       </div>
+      <DraftCanvas :question-key="roundId" />
     </template>
   </main>
 </template>

@@ -98,8 +98,8 @@ export async function answerClassroom(token, payload) { return apiRequest(`/api/
 export async function startTeacherClassroom(id) { return apiRequest(`/api/teacher/classrooms/${id}/start`, { method: 'POST' }) }
 export async function nextTeacherClassroom(id) { return apiRequest(`/api/teacher/classrooms/${id}/next`, { method: 'POST' }) }
 export async function getTeacherClassroomStats(id) { return apiRequest(`/api/teacher/classrooms/${id}/stats`) }
-export async function getStudentWords() { return apiRequest('/api/student/words') }
-export async function getStudentWordReview() { return apiRequest('/api/student/words/review') }
+export async function getStudentWords(gradeId) { return apiRequest(`/api/student/words?grade_id=${encodeURIComponent(gradeId)}`) }
+export async function getStudentWordReview(gradeId) { return apiRequest(`/api/student/words/review?grade_id=${encodeURIComponent(gradeId)}`) }
 export async function rateStudentWord(payload) { return apiRequest('/api/student/words/rate', { method: 'POST', body: JSON.stringify(payload) }) }
 export async function importWords(gradeId, file) { const body = new FormData(); body.append('grade_id', gradeId); body.append('file', file); return apiRequest('/api/teacher/words/import', { method: 'POST', body }) }
 export async function getTeacherWords() { return apiRequest('/api/teacher/words') }
