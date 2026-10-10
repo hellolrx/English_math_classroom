@@ -66,6 +66,13 @@ class ClassroomAnswerRequest(BaseModel):
     selected_option: str = Field(pattern="^[ABCD]$")
 
 
+class CreateSessionRequest(BaseModel):
+    batch_id: str = Field(min_length=1)
+    class_id: str | None = None
+    session_type: str = Field(default="classroom", pattern="^(classroom|homework)$")
+    time_limit_seconds: int = Field(default=30, ge=0, le=3600)
+
+
 class WordRatingRequest(BaseModel):
     word_id: str
     rating: str = Field(pattern="^(forgot|fuzzy|clear)$")
@@ -166,7 +173,7 @@ async def supabase_request(
     path: str,
     *,
     access_token: str | None = None,
-    body: dict[str, Any] | None = None,
+    body: dict[str, Any] | list[dict[str, Any]] | None = None,
     params: dict[str, str] | None = None,
     service_role: bool = False,
     prefer_representation: bool = False,
@@ -463,6 +470,50 @@ async def answer_classroom(access_token: str, payload: ClassroomAnswerRequest, r
     return {"submitted": True}
 
 
+@app.post("/api/sessions")
+async def create_session(payload: CreateSessionRequest, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    teacher = await current_teacher_profile(request, bearer_token(authorization))
+    status, batches = await supabase_request(
+        request, "GET", "/rest/v1/math_batches", service_role=True,
+        params={"id": f"eq.{payload.batch_id}", "status": "eq.published", "select": "id,topics!inner(school_id,is_active)"},
+    )
+    if status >= 400 or not batches or batches[0]["topics"]["school_id"] != teacher["school_id"] or not batches[0]["topics"]["is_active"]:
+        raise HTTPException(status_code=404, detail="找不到可用题库")
+    params = {"batch_id": f"eq.{payload.batch_id}", "select": "id,sort_order", "order": "sort_order.asc"}
+    if payload.session_type == "classroom":
+        params["question_type"] = "eq.single_choice"
+    question_status, questions = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params=params)
+    if question_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取题库题目")
+    if not questions:
+        raise HTTPException(status_code=409, detail="没有可用题目；课堂仅使用选择题")
+    app_url = env_value(request, "PUBLIC_APP_URL", "https://english-math-classroom.pages.dev").rstrip("/")
+    if payload.session_type == "homework":
+        code = secrets.token_hex(4).upper()
+        status, practice_id = await supabase_request(request, "POST", "/rest/v1/rpc/app_create_practice", service_role=True,
+            body={"p_batch": payload.batch_id, "p_teacher": teacher["user_id"], "p_code": code})
+        if status >= 400 or not practice_id:
+            raise HTTPException(status_code=502, detail="无法建立练习码")
+        return {"id": practice_id, "practice_code": code, "question_count": len(questions), "join_url": f"{app_url}/student/practice/{code}"}
+    if not payload.class_id or payload.time_limit_seconds < 1:
+        raise HTTPException(status_code=422, detail="请选择班级及有效的每题时间")
+    class_status, classes = await supabase_request(request, "GET", "/rest/v1/classes", service_role=True,
+        params={"id": f"eq.{payload.class_id}", "school_id": f"eq.{teacher['school_id']}", "is_active": "eq.true", "select": "id"})
+    if class_status >= 400 or not classes:
+        raise HTTPException(status_code=404, detail="找不到可用班级")
+    status, sessions = await supabase_request(request, "POST", "/rest/v1/classroom_sessions", service_role=True, prefer_representation=True,
+        body={"batch_id": payload.batch_id, "class_id": payload.class_id, "created_by": teacher["user_id"], "duration_seconds": payload.time_limit_seconds})
+    if status >= 400 or not sessions:
+        raise HTTPException(status_code=502, detail="无法建立课堂")
+    session = sessions[0]
+    link_status, _ = await supabase_request(request, "POST", "/rest/v1/classroom_session_questions", service_role=True,
+        body=[{"session_id": session["id"], "batch_id": payload.batch_id, "question_id": question["id"], "sort_order": question["sort_order"]} for question in questions])
+    if link_status >= 400:
+        await supabase_request(request, "DELETE", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{session['id']}"})
+        raise HTTPException(status_code=502, detail="无法保存课堂题目，请重新建立")
+    return {**session, "question_count": len(questions), "join_url": f"{app_url}/student/session/{session['access_token']}"}
+
+
 @app.post("/api/teacher/classrooms/{session_id}/start")
 async def start_new_classroom(session_id: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     token = bearer_token(authorization); teacher = await current_teacher_profile(request, token)
@@ -589,7 +640,7 @@ async def teacher_practice_summary(
     if student_ids:
         classroom_status, sessions = await supabase_request(
             request, "GET", "/rest/v1/classroom_sessions", service_role=True,
-            params={"batch_id": f"eq.{batch_id}", "class_id": f"eq.{class_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id"},
+            params={"batch_id": f"eq.{batch_id}", "classes.school_id": f"eq.{teacher['school_id']}", "select": "id,classes!inner(school_id)"},
         )
         if classroom_status >= 400:
             raise HTTPException(status_code=502, detail="无法读取课堂记录")
@@ -597,7 +648,7 @@ async def teacher_practice_summary(
         if session_ids:
             classroom_answer_status, classroom_answers = await supabase_request(
                 request, "GET", "/rest/v1/classroom_answers", service_role=True,
-                params={"session_id": f"in.({','.join(session_ids)})", "select": "student_id,question_id,selected_option,is_correct,answered_at", "order": "answered_at.asc"},
+                params={"session_id": f"in.({','.join(session_ids)})", "student_id": f"in.({','.join(student_ids)})", "select": "student_id,question_id,selected_option,is_correct,answered_at", "order": "answered_at.asc"},
             )
             if classroom_answer_status >= 400:
                 raise HTTPException(status_code=502, detail="无法读取课堂答案")
@@ -608,7 +659,7 @@ async def teacher_practice_summary(
                     merged[key] = answer
             participant_status, participants = await supabase_request(
                 request, "GET", "/rest/v1/classroom_participants", service_role=True,
-                params={"session_id": f"in.({','.join(session_ids)})", "select": "student_id"},
+                params={"session_id": f"in.({','.join(session_ids)})", "student_id": f"in.({','.join(student_ids)})", "select": "student_id"},
             )
             if participant_status < 400:
                 merged_participant_ids = {row.get("student_id") for row in participants if row.get("student_id")}
@@ -632,7 +683,7 @@ async def teacher_practice_summary(
         current = [answer for answer in merged.values() if answer.get("question_id") == question["id"]]
         distribution = {key: sum(1 for answer in current if answer.get("selected_option") == key) for key in "ABCD"}
         correct_count = sum(1 for answer in current if answer.get("is_correct") is True)
-        answered_count = sum(1 for answer in current if answer.get("selected_option") or answer.get("is_correct") is not None)
+        answered_count = sum(1 for answer in current if answer.get("selected_option") or (answer.get("text_answer") or "").strip() or answer.get("is_correct") is not None)
         text_answers = []
         if question["question_type"] == "text_input":
             for answer in current:
@@ -708,7 +759,12 @@ async def student_words(request: Request, grade_id: str, authorization: str | No
     target_grade_id = grades[0]["id"]
     status, rows = await supabase_request(request, "GET", "/rest/v1/words", service_role=True, params={"grade_id": f"eq.{target_grade_id}", "select": "id,word,meaning,sort_order,word_batches!inner(status)", "word_batches.status": "eq.published", "order": "sort_order.asc"})
     if status >= 400: raise HTTPException(status_code=502, detail="无法读取单词")
-    return rows
+    progress_status, progress = await supabase_request(request, "GET", "/rest/v1/word_progress", service_role=True,
+        params={"student_id": f"eq.{student['id']}", "words.grade_id": f"eq.{target_grade_id}", "select": "word_id,words!inner(grade_id)"})
+    if progress_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取单词学习进度")
+    learned_ids = {item["word_id"] for item in progress}
+    return [word for word in rows if word["id"] not in learned_ids]
 
 
 @app.get("/api/student/words/review")

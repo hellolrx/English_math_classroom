@@ -14,7 +14,7 @@ const errorMessage = ref('')
 async function load() {
   try {
     student.value = await getCurrentStudent()
-    topics.value = await getStudentTopics()
+    topics.value = student.value.grade === 'S6' ? await getStudentTopics() : []
   } catch (error) {
     errorMessage.value = error.message
   } finally {
