@@ -5,15 +5,17 @@ import { login } from '../api/client'
 
 const router = useRouter()
 const route = useRoute()
-const username = ref('admin')
-const password = ref('admin123')
+const studentEntry = route.query.mode === 'student' || (typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/student/'))
+const username = ref(studentEntry ? 'hhx003' : 'admin')
+const password = ref(studentEntry ? '123' : 'admin123')
 const loading = ref(false)
 const errorMessage = ref('')
-const mode = ref('teacher')
+const mode = ref(studentEntry ? 'student' : 'teacher')
 // The deployed test environment uses the seeded hhx003 account for smoke tests.
 const allowTestPrefill = true
 
 function switchMode() {
+  if (loading.value) return
   mode.value = mode.value === 'teacher' ? 'student' : 'teacher'
   username.value = mode.value === 'student' ? (allowTestPrefill ? 'hhx003' : '') : 'admin'
   password.value = mode.value === 'student' ? (allowTestPrefill ? '123' : '') : 'admin123'
@@ -30,19 +32,18 @@ async function submit() {
   loading.value = true
   try {
     const result = await login(username.value.trim(), password.value, mode.value)
-    localStorage.removeItem('hhx_access_token')
-    localStorage.removeItem('hhx_student_token')
     if (mode.value === 'student') {
       localStorage.setItem('hhx_student_token', result.student_token)
-      localStorage.setItem('hhx_mode', 'student')
+      localStorage.removeItem('hhx_student_profile')
       const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/student/')
         ? route.query.redirect
         : '/student'
       router.push(redirect)
     } else {
       localStorage.setItem('hhx_access_token', result.access_token)
-      localStorage.setItem('hhx_mode', 'teacher')
-      router.push('/teacher')
+      const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/teacher/')
+        ? route.query.redirect : '/teacher'
+      router.push(redirect)
     }
   } catch (error) {
     errorMessage.value = error.message
@@ -109,7 +110,7 @@ async function submit() {
 
       <div class="auth-footer">
         <span>{{ mode === 'teacher' ? '學生？' : '老師？' }}</span>
-        <button class="link-button" type="button" @click="switchMode">
+        <button class="link-button" type="button" :disabled="loading" @click="switchMode">
           {{ mode === 'teacher' ? '切換學生登入' : '切換老師登入' }}
         </button>
       </div>

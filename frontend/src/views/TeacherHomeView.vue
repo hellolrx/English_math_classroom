@@ -13,8 +13,10 @@ onMounted(async () => {
     teacher.value = await getCurrentTeacher()
   } catch (error) {
     errorMessage.value = error.message
-    localStorage.removeItem('hhx_access_token')
-    router.replace('/login')
+    if (error.status === 401 || error.status === 403) {
+      localStorage.removeItem('hhx_access_token')
+      router.replace('/login')
+    }
   } finally {
     loading.value = false
   }
@@ -27,13 +29,13 @@ function logout() {
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell teacher-ui teacher-home">
     <header class="topbar">
       <div>
         <p class="eyebrow">ENGLISH MATH CLASSROOM</p>
         <h1>老師工作台</h1>
       </div>
-      <button class="text-button" @click="logout">登出</button>
+      <button class="secondary-button" @click="logout">登出</button>
     </header>
 
     <p v-if="loading" class="loading-state">正在讀取老師資料…</p>

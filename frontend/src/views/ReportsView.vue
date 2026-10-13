@@ -57,7 +57,7 @@ onMounted(load)
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell teacher-ui teacher-reports">
     <header class="topbar">
       <div><RouterLink class="back-link-inline" to="/teacher">← 返回老师工作台</RouterLink><p class="eyebrow">REPORTS</p><h1>习题统计</h1><p class="muted">选择班级和当前题库，合并查看课堂、自主练习与练习码作答。</p></div>
     </header>

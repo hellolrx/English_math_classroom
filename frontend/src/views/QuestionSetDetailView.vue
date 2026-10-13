@@ -13,7 +13,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell teacher-ui">
     <header class="topbar"><div><RouterLink class="back-link-inline" to="/teacher/question-sets">← 返回数学题库</RouterLink><p class="eyebrow">TOPIC CONTENT</p><h1>{{ topic ? `${topic.code} · ${topic.name}` : '主题题目' }}</h1></div></header>
     <p v-if="loading" class="loading-state">正在读取题目…</p><p v-else-if="error" class="error-message">{{ error }}</p>
     <section v-else class="detail-panel">

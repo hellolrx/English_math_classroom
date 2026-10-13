@@ -73,7 +73,7 @@ onMounted(loadTopics)
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell teacher-ui teacher-topics">
     <header class="topbar"><div><RouterLink class="back-link-inline" to="/teacher">← 返回老师工作台</RouterLink><p class="eyebrow">MATH TOPICS</p><h1>数学题库</h1><p class="muted">每个主题单独覆盖；学生旧答题记录保留在原批次。</p></div></header>
     <p v-if="loading" class="loading-state">正在读取主题…</p>
     <p v-else-if="error && !selectedTopic" class="error-message">{{ error }}</p>
@@ -83,7 +83,7 @@ onMounted(loadTopics)
           <span><strong>{{ topic.code }}</strong> {{ topic.name }}<small>{{ topic.question_count }} 题 · {{ topic.batch_status === 'published' ? '已发布' : '未导入' }}</small></span>
         </button>
       </aside>
-      <section v-if="selectedTopic" class="topic-admin-content">
+      <section v-if="selectedTopic" class="detail-panel topic-admin-content">
         <div class="panel-heading"><div><p class="eyebrow">{{ selectedTopic.code }}</p><h2>{{ selectedTopic.name }}</h2><p class="muted">当前题量：{{ selectedTopic.question_count }}</p><RouterLink class="back-link-inline" :to="`/teacher/question-sets/${selectedTopic.id}`">查看当前题目</RouterLink></div></div>
         <label class="topic-upload"><span>选择 Excel 文件</span><input ref="fileInput" type="file" accept=".xlsx" @change="chooseFile"></label>
         <p class="helper-text">Excel 列：来源、题目截图、正确答案。来源填写完整标识，例如 DSE 2022 MT II (2)；答案为 A-D 时自动识别为选择题，留空时识别为非选择题。</p>

@@ -34,6 +34,7 @@ body:has(.student-ui) {
   background: #fff;
   box-shadow: 0 5px 0 #e7ebef;
 }
+.student-ui .student-session-card .student-mark { position: static; margin-bottom: 18px; }
 .student-ui .student-tool-panel { padding: 28px; gap: 24px; }
 .student-ui .student-vocabulary-panel { border-color: #c8e6b5; background: #f6fced; box-shadow: 0 5px 0 #deedce; }
 .student-ui .student-module-heading { display: flex; align-items: center; gap: 18px; min-width: 0; }

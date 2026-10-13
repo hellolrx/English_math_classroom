@@ -7,9 +7,12 @@ export async function apiRequest(path, options = {}) {
     headers.set('Content-Type', 'application/json')
   }
 
-  const token = localStorage.getItem('hhx_mode') === 'student'
-    ? localStorage.getItem('hhx_student_token')
-    : localStorage.getItem('hhx_access_token')
+  // Tabs share localStorage; credentials must follow the endpoint, never the last login.
+  const endpoint = path.split('?')[0]
+  const studentEndpoint = endpoint.startsWith('/api/student/') || endpoint.startsWith('/api/classroom/')
+  const teacherEndpoint = endpoint.startsWith('/api/teacher/') || endpoint === '/api/auth/me' || endpoint === '/api/sessions'
+  const token = studentEndpoint ? localStorage.getItem('hhx_student_token')
+    : teacherEndpoint ? localStorage.getItem('hhx_access_token') : null
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
@@ -25,6 +28,7 @@ export async function apiRequest(path, options = {}) {
         ? payload.detail
         : payload.detail?.errors?.join('\n') || payload.detail?.message || payload.message
       lastError = new Error(detail || '請求失敗，請稍後再試')
+      lastError.status = response.status
       if (!canRetry || response.status < 500 || attempt === 2) throw lastError
     } catch (error) {
       lastError = error
