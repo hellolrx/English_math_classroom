@@ -53,8 +53,27 @@ async function submit() {
 </script>
 
 <template>
-  <main class="auth-shell">
-    <section class="auth-card">
+  <main class="auth-shell" :class="{ 'student-ui student-login': mode === 'student' }">
+    <div :class="mode === 'student' ? 'student-login-layout' : 'teacher-login-layout'">
+    <div v-if="mode === 'student'" class="student-login-intro">
+      <p class="eyebrow">A LITTLE PRACTICE, EVERY DAY</p>
+      <h2>每天學一點，<br />慢慢進步。</h2>
+      <p>從一個單詞、一道題目開始，<br />找到自己的學習節奏。</p>
+      <svg class="student-login-art" viewBox="0 0 320 220" fill="none" aria-hidden="true">
+        <circle cx="157" cy="110" r="94" fill="#e0f2fe" />
+        <rect x="43" y="67" width="104" height="117" rx="20" fill="#c8e6a9" transform="rotate(-10 43 67)" />
+        <rect x="47" y="60" width="104" height="117" rx="20" fill="#f4fce9" stroke="#91c568" stroke-width="3" transform="rotate(-10 47 60)" />
+        <text x="76" y="132" fill="#438014" font-size="46" font-weight="800" transform="rotate(-10 76 132)">Aa</text>
+        <rect x="161" y="61" width="112" height="127" rx="20" fill="#b3ddf1" transform="rotate(10 161 61)" />
+        <rect x="163" y="53" width="112" height="127" rx="20" fill="white" stroke="#6bbce3" stroke-width="3" transform="rotate(10 163 53)" />
+        <path d="M181 91l58 10M178 111l42 7M175 131l28 5" stroke="#84c9eb" stroke-width="7" stroke-linecap="round" />
+        <circle cx="239" cy="152" r="22" fill="#ffc800" />
+        <path d="M231 152l6 6 11-12" stroke="#795600" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M54 37v14M47 44h14M282 102v14M275 109h14" stroke="#91c568" stroke-width="4" stroke-linecap="round" />
+        <circle cx="233" cy="28" r="7" fill="#ffc800" />
+      </svg>
+    </div>
+    <section class="auth-card" :class="{ 'student-login-card': mode === 'student' }">
       <div class="brand-mark">數</div>
       <p class="eyebrow">ENGLISH MATH CLASSROOM</p>
       <h1>{{ mode === 'teacher' ? '老師登入' : '學生登入' }}</h1>
@@ -82,5 +101,10 @@ async function submit() {
         </button>
       </div>
     </section>
+    </div>
   </main>
 </template>
+
+<style scoped>
+.teacher-login-layout { display: contents; }
+</style>

@@ -4,9 +4,23 @@
   --student-muted: #66717d;
   --student-border: #e1e6eb;
   color: var(--student-ink);
+  position: relative;
+  isolation: isolate;
 }
-body:has(.student-ui) { background: #f7f9fa; }
-.student-ui.auth-shell { background: #f7f9fa; }
+body:has(.student-ui) {
+  background: radial-gradient(ellipse at 0% 0%, #e0f2fe 0, transparent 55%), radial-gradient(ellipse at 100% 75%, #e5f6dd 0, transparent 55%), #f6fafc;
+}
+.student-ui::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(circle 85px at 6% 28%, #aee0f53b 98%, transparent), radial-gradient(circle 130px at 94% 65%, #b7e4a42e 98%, transparent), radial-gradient(circle 45px at 86% 12%, #ffe48838 98%, transparent);
+  animation: student-background-drift 18s ease-in-out infinite alternate;
+}
+.student-ui.auth-shell { background: transparent; min-height: 100svh; }
+@keyframes student-background-drift { to { transform: translateY(16px); } }
 .student-ui .topbar h1 { color: #38424c; letter-spacing: -.025em; }
 .student-ui .eyebrow { color: #1679ac; }
 .student-ui .muted, .student-ui .empty-state { color: var(--student-muted); }
@@ -49,10 +63,32 @@ body:has(.student-ui) { background: #f7f9fa; }
 .student-ui :is(button, .primary-button):disabled { cursor: not-allowed; opacity: .65; transform: none; }
 .student-ui :is(input, textarea) { border: 2px solid var(--student-border); border-radius: 14px; color: var(--student-ink); background: #fff; }
 .student-ui input:focus { border-color: #1cb0f6; box-shadow: 0 0 0 3px #e0f2fe; }
-.student-ui .back-link-inline { border: 0; padding: 4px 0; color: #1679ac; background: transparent; font-weight: 700; }
-.student-ui .student-set-card { align-items: center; min-width: 0; }
+.student-ui .back-link-inline { display: inline-flex; align-items: center; min-height: 44px; border: 0; padding: 4px 0; color: #1679ac; background: transparent; font-weight: 700; }
+.student-ui .student-set-section { background: #ffffffed; border-color: #c9dfed; }
+.student-ui .student-set-card {
+  --topic-fill: #eef8ff;
+  --topic-border: #cae5f5;
+  --topic-ink: #146a95;
+  --topic-badge: #d6efff;
+  --button-shadow: var(--topic-border);
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 16px;
+  border-color: var(--topic-border);
+  background: var(--topic-fill);
+}
+.student-ui .student-topic-tone-1 { --topic-fill: #f2faeb; --topic-border: #d2e6bd; --topic-ink: #426f25; --topic-badge: #e0f0cc; }
+.student-ui .student-topic-tone-2 { --topic-fill: #fff9e8; --topic-border: #eee0b3; --topic-ink: #806113; --topic-badge: #fff0bc; }
+.student-ui .student-topic-tone-3 { --topic-fill: #f6f2ff; --topic-border: #e0d5f2; --topic-ink: #74529a; --topic-badge: #eae0fb; }
 .student-ui .student-set-card strong { overflow-wrap: anywhere; }
 .student-ui .student-set-card span { color: var(--student-muted); font-size: 13px; }
+.student-ui .student-set-card .student-topic-number { display: grid; place-items: center; min-height: 42px; border-radius: 12px; color: var(--topic-ink); background: var(--topic-badge); font-size: 16px; font-weight: 800; }
+.student-ui .student-set-card:disabled { opacity: 1; color: #68717b; border-style: dashed; box-shadow: 0 3px 0 var(--topic-border); }
+.student-ui .student-set-card:disabled .student-topic-status { font-size: 12px; }
+.student-ui .student-set-card:hover:not(:disabled) { border-color: var(--topic-ink); color: var(--topic-ink); background: var(--topic-fill); }
 .student-ui .word-card { position: relative; overflow: hidden; padding: 48px 28px 36px; border-top: 6px solid #1cb0f6; }
 .student-ui .word-card h2 { color: #38424c; overflow-wrap: anywhere; max-width: 100%; }
 .student-ui .word-meaning { color: #095b84; background: #e0f2fe; border-radius: 16px; }
@@ -71,7 +107,37 @@ body:has(.student-ui) { background: #f7f9fa; }
 .student-ui .countdown { padding: 10px 16px; color: #356b12; background: #edf9df; }
 .student-ui .countdown.urgent { color: #a12734; background: #ffedef; }
 .student-ui .student-mark { background: #e0f2fe; color: #095b84; box-shadow: 0 4px 0 #bedef1; }
+.student-ui.student-login { padding: 40px 24px; }
+.student-ui .student-login-layout { width: min(100%, 980px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 430px); gap: 64px; align-items: center; }
+.student-ui .student-login-intro h2 { color: #38424c; font-size: clamp(30px, 4vw, 46px); line-height: 1.3; letter-spacing: -.03em; }
+.student-ui .student-login-intro > p:not(.eyebrow) { color: var(--student-muted); font-size: 17px; line-height: 1.8; }
+.student-ui .student-login-art { display: block; width: min(100%, 320px); margin-top: 20px; }
+.student-ui .student-login-card { width: 100%; padding: 36px; border: 2px solid #d1e6f2; border-top: 6px solid #1cb0f6; border-radius: 26px; box-shadow: 0 6px 0 #d8e8ef, 0 24px 60px #4c7c9412; }
+.student-ui .student-login-card .brand-mark { width: 52px; height: 52px; margin-bottom: 16px; color: #095b84; background: #e0f2fe; box-shadow: 0 4px 0 #b9def2; }
+.student-ui .student-login-card label { color: #4b5967; }
+.student-ui .student-login-card .primary-button { --button-shadow: #1594cc; border-color: #1cb0f6; background: #1cb0f6; color: #073d59; }
+.student-ui .student-login-card .primary-button:hover:not(:disabled) { background: #40bdf7; }
+.student-ui .student-login-card .link-button { min-height: 44px; color: #1679ac; }
+.student-ui .student-login-card .auth-footer { margin-top: 24px; align-items: center; flex-wrap: wrap; }
+.student-ui :is(input, textarea) { min-width: 0; font-size: 16px; }
+.student-ui .topbar > div { min-width: 0; }
+.student-ui .topbar h1 { overflow-wrap: anywhere; }
+.student-ui .topbar > button { flex-shrink: 0; }
+.student-ui .word-meaning { max-width: 100%; overflow-wrap: anywhere; }
+.student-ui .draft-toggle { min-height: 48px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+.student-ui .draft-toolbar { top: calc(18px + env(safe-area-inset-top, 0px)); }
 @media (max-width: 760px) {
+  .student-ui.app-shell { width: calc(100% - 28px); padding: 28px 0 calc(100px + env(safe-area-inset-bottom, 0px)); }
+  .student-ui .student-login-layout { grid-template-columns: minmax(0, 430px); justify-content: center; gap: 22px; }
+  .student-ui.student-login { padding: 24px 16px calc(32px + env(safe-area-inset-bottom, 0px)); }
+  .student-ui .student-login-intro { text-align: center; }
+  .student-ui .student-login-intro h2 { margin-bottom: 8px; font-size: 26px; }
+  .student-ui .student-login-intro h2 br { display: none; }
+  .student-ui .student-login-intro > p:not(.eyebrow), .student-ui .student-login-art { display: none; }
+  .student-ui .student-login-intro .eyebrow { font-size: 10px; }
+  .student-ui .student-login-card { padding: 26px 22px; }
+  .student-ui .student-login-card h1 { font-size: 30px; }
+  .student-ui .student-login-card .form-stack { gap: 16px; margin-top: 24px; }
   .student-ui .student-tool-panel, .student-ui .student-round-question { padding: 20px; }
   .student-ui .student-module-heading { gap: 14px; }
   .student-ui .student-module-icon { width: 48px; height: 48px; flex-basis: 48px; border-radius: 14px; }
@@ -80,9 +146,27 @@ body:has(.student-ui) { background: #f7f9fa; }
   .student-ui .word-card .choice-grid { grid-template-columns: 1fr; }
   .student-ui .fixed-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .student-ui .code-form { width: 100%; }
-  .student-ui .round-submit-bar { bottom: 76px; }
+  .student-ui .student-set-section { padding: 20px 16px; }
+  .student-ui .student-set-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .student-ui .student-set-card { grid-template-columns: 38px minmax(0, 1fr); gap: 8px 12px; padding: 14px; }
+  .student-ui .student-set-card .student-topic-number { grid-row: span 2; min-height: 42px; }
+  .student-ui .student-topic-status { grid-column: 2; }
+  .student-ui .round-submit-bar { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .student-ui .round-submit-bar .primary-button { width: 100%; white-space: normal; }
+  .student-ui .student-session-card { padding: 26px 18px; }
+  .student-ui .student-module-heading > div { min-width: 0; }
+}
+@media (max-width: 380px) {
+  .student-ui .topbar { gap: 12px; }
+  .student-ui .topbar h1 { font-size: 28px; }
+  .student-ui .topbar > button { padding: 10px 12px; }
+  .student-ui .student-tool-panel { padding: 18px 16px; }
+  .student-ui .student-module-icon { width: 40px; height: 40px; flex-basis: 40px; }
+  .student-ui .student-module-heading { gap: 10px; }
+  .student-ui .student-module-heading .eyebrow { letter-spacing: .08em; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .student-ui::before { animation: none; }
   .student-ui :is(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card) { transition: none; }
   .student-ui :is(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card):hover:not(:disabled),
   .student-ui :is(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card):active:not(:disabled) { transform: none; }

@@ -72,10 +72,11 @@ onMounted(load)
         <p v-if="topicsError" class="error-message" role="alert">數學主題讀取失敗：{{ topicsError }}</p>
         <p v-else-if="!topics.length" class="empty-state">目前沒有可用主題。</p>
         <div v-else class="student-set-grid">
-          <button v-for="topic in topics" :key="topic.id" class="student-set-card"
+          <button v-for="(topic, index) in topics" :key="topic.id" class="student-set-card" :class="`student-topic-tone-${index % 4}`"
             :disabled="!topic.batch_id" @click="router.push(`/student/topics/${topic.id}`)">
-            <strong>{{ topic.code }} · {{ topic.name }}</strong>
-            <span>{{ topic.batch_id ? `${topic.question_count} 題` : '暫無題目' }}</span>
+            <span class="student-topic-number">{{ topic.code }}</span>
+            <strong>{{ topic.name }}</strong>
+            <span class="student-topic-status">{{ topic.batch_id ? `${topic.question_count} 題` : '暫無題目' }}</span>
           </button>
         </div>
       </section>
