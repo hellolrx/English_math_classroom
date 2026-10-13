@@ -381,7 +381,7 @@ async def _classroom_payload(request: Request, session: dict[str, Any], *, inclu
         if status < 400 and rows:
             session = rows[0]
     question = None
-    if session.get("current_question_id"):
+    if session.get("status") == "active" and session.get("current_question_id"):
         status, rows = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params={"id": f"eq.{session['current_question_id']}", "batch_id": f"eq.{session['batch_id']}", "select": "id,sort_order,question_type,image_bucket,image_path"})
         if rows:
             row = rows[0]
@@ -410,7 +410,7 @@ async def _advance_classroom_if_expired(request: Request, session: dict[str, Any
         params={"session_id": f"eq.{session['id']}", "select": "question_id,sort_order", "order": "sort_order.asc"},
     )
     if status >= 400:
-        return session
+        raise HTTPException(status_code=502, detail="无法读取课堂题目，请重试")
     index = next((i for i, item in enumerate(links) if item["question_id"] == session.get("current_question_id")), -1)
     now = utc_now()
     duration = int(session.get("duration_seconds") or 60)
@@ -420,17 +420,39 @@ async def _advance_classroom_if_expired(request: Request, session: dict[str, Any
         body = {"status": "active", "current_question_id": links[index + 1]["question_id"], "question_status": "open", "question_opened_at": now.isoformat(), "deadline_at": (now + timedelta(seconds=duration)).isoformat()}
     update_status, updated = await supabase_request(
         request, "PATCH", "/rest/v1/classroom_sessions", service_role=True, prefer_representation=True,
-        params={"id": f"eq.{session['id']}", "current_question_id": f"eq.{session.get('current_question_id')}"}, body=body,
+        params={"id": f"eq.{session['id']}", "status": "eq.active", "current_question_id": f"eq.{session.get('current_question_id')}", "deadline_at": f"eq.{session['deadline_at']}"}, body=body,
     )
-    return updated[0] if update_status < 400 and updated else session
+    if update_status >= 400:
+        raise HTTPException(status_code=502, detail="课堂状态更新失败，请重试")
+    if updated:
+        return updated[0]
+    # Another polling request may already have advanced this question.
+    latest_status, latest = await supabase_request(
+        request, "GET", "/rest/v1/classroom_sessions", service_role=True,
+        params={"id": f"eq.{session['id']}", "select": "*"},
+    )
+    if latest_status >= 400 or not latest:
+        raise HTTPException(status_code=502, detail="无法读取最新课堂状态")
+    return latest[0]
 
 
 @app.get("/api/classroom/{access_token}")
 async def get_classroom(access_token: str, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    await verify_student_token(request, authorization)
+    student = await verify_student_token(request, authorization)
     status, rows = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"access_token": f"eq.{access_token}", "select": "id,batch_id,class_id,access_token,status,current_question_id,question_status,duration_seconds,question_opened_at,deadline_at,expires_at,closed_at", "limit": "1"})
-    if status >= 400 or not rows or rows[0]["status"] in {"closed", "invalidated"}:
+    if status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取课堂状态，请重试")
+    if not rows or rows[0]["status"] == "invalidated":
         raise HTTPException(status_code=404, detail="课堂已结束或链接失效")
+    if rows[0]["status"] == "closed":
+        participant_status, participants = await supabase_request(
+            request, "GET", "/rest/v1/classroom_participants", service_role=True,
+            params={"session_id": f"eq.{rows[0]['id']}", "student_id": f"eq.{student['id']}", "select": "student_id"},
+        )
+        if participant_status >= 400:
+            raise HTTPException(status_code=502, detail="无法读取课堂参与状态")
+        if not participants:
+            raise HTTPException(status_code=404, detail="课堂已结束或链接失效")
     return await _classroom_payload(request, rows[0])
 
 
@@ -706,7 +728,9 @@ async def teacher_practice_summary(
     return {
         "title": f"{topic.get('code', '')} {topic.get('name', '')}",
         "class": classes[0], "batch_id": batch_id, "student_count": len(students),
-        "completed_count": len(participant_ids), "participant_count": len(participant_ids), "questions": reports,
+        "completed_count": len(participant_ids), "participant_count": len(participant_ids),
+        "answered_student_count": len({student_id for (student_id, _), answer in merged.items() if answer.get("selected_option") or (answer.get("text_answer") or "").strip()}),
+        "questions": reports,
     }
 
 
@@ -716,10 +740,12 @@ async def teacher_report(kind: str, item_id: str, request: Request, authorizatio
     if kind == "classroom":
         status, sessions = await supabase_request(request, "GET", "/rest/v1/classroom_sessions", service_role=True, params={"id": f"eq.{item_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,batch_id,status,created_at,closed_at,class_id,classes(name,code)"})
         if status >= 400 or not sessions: raise HTTPException(status_code=404, detail="找不到课堂")
-        session = sessions[0]; _, links = await supabase_request(request, "GET", "/rest/v1/classroom_session_questions", service_role=True, params={"session_id": f"eq.{item_id}", "select": "question_id,sort_order", "order": "sort_order.asc"})
-        _, answers = await supabase_request(request, "GET", "/rest/v1/classroom_answers", service_role=True, params={"session_id": f"eq.{item_id}", "select": "question_id,selected_option,is_correct,student_id"})
+        session = sessions[0]; link_status, links = await supabase_request(request, "GET", "/rest/v1/classroom_session_questions", service_role=True, params={"session_id": f"eq.{item_id}", "select": "question_id,sort_order", "order": "sort_order.asc"})
+        answer_status, answers = await supabase_request(request, "GET", "/rest/v1/classroom_answers", service_role=True, params={"session_id": f"eq.{item_id}", "select": "question_id,selected_option,is_correct,student_id"})
         participant_status, participants = await supabase_request(request, "GET", "/rest/v1/classroom_participants", service_role=True, params={"session_id": f"eq.{item_id}", "select": "student_id"})
-        title = "课堂统计"; total = len(participants) if participant_status < 400 else 0
+        if max(link_status, answer_status, participant_status) >= 400:
+            raise HTTPException(status_code=502, detail="无法读取课堂统计，请重试")
+        title = "课堂统计"; total = len(participants)
     elif kind == "practice":
         status, practices = await supabase_request(request, "GET", "/rest/v1/practices", service_role=True, params={"id": f"eq.{item_id}", "created_by": f"eq.{teacher['user_id']}", "select": "id,batch_id,access_code,status,created_at"})
         if status >= 400 or not practices: raise HTTPException(status_code=404, detail="找不到练习")
@@ -740,14 +766,16 @@ async def teacher_report(kind: str, item_id: str, request: Request, authorizatio
         title = f"练习码 {session['access_code']}"
     else: raise HTTPException(status_code=404, detail="统计类型无效")
     question_ids = [link["question_id"] for link in links]
-    _, questions = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params={"id": f"in.({','.join(question_ids)})" if question_ids else "eq.invalid", "select": "id,sort_order,question_type,correct_option"})
+    question_status, questions = await supabase_request(request, "GET", "/rest/v1/questions", service_role=True, params={"id": f"in.({','.join(question_ids)})", "select": "id,sort_order,question_type,correct_option"}) if question_ids else (200, [])
+    if question_status >= 400:
+        raise HTTPException(status_code=502, detail="无法读取统计题目")
     reports = []
     for question in sorted(questions, key=lambda row: row["sort_order"]):
         current = [answer for answer in answers if answer.get("question_id") == question["id"]]
         distribution = {key: sum(1 for answer in current if answer.get("selected_option") == key) for key in "ABCD"}
         correct = sum(1 for answer in current if answer.get("is_correct") is True)
-        reports.append({"id": question["id"], "sort_order": question["sort_order"], "question_type": question["question_type"], "correct_option": question.get("correct_option"), "submitted_count": len(current), "correct_count": correct, "accuracy": round(correct / len(current) * 100) if current else 0, "distribution": distribution})
-    return {"title": title, "session": session, "participant_count": total, "questions": reports}
+        reports.append({"id": question["id"], "sort_order": question["sort_order"], "question_type": question["question_type"], "correct_option": question.get("correct_option"), "submitted_count": len(current), "unanswered_count": max(total - len(current), 0), "correct_count": correct, "accuracy": round(correct / len(current) * 100) if current else 0, "distribution": distribution})
+    return {"title": title, "session": session, "participant_count": total, "answered_student_count": len({answer["student_id"] for answer in answers}) if kind == "classroom" else total, "questions": reports}
 
 
 @app.get("/api/student/words")

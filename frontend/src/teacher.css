@@ -1,6 +1,7 @@
 /* Shared teacher surfaces, scoped away from student pages. */
 .teacher-ui { --teacher-ink: #414354; --teacher-accent: #7652a0; color: var(--teacher-ink); position: relative; isolation: isolate; }
-body:has(.teacher-ui) { background: radial-gradient(ellipse at 0% 0%, #ece5fc, transparent 55%), radial-gradient(ellipse at 100% 75%, #fff0d9, transparent 55%), #faf9fd; }
+html:has(.teacher-ui), body:has(.teacher-ui) { min-height: 100%; background: radial-gradient(ellipse at 0% 0%, #ece5fc, transparent 55%), radial-gradient(ellipse at 100% 75%, #fff0d9, transparent 55%), #faf9fd; }
+body:has(.teacher-ui) { min-height: 100vh; min-height: 100svh; background-attachment: fixed; }
 .teacher-ui::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(circle 85px at 6% 28%, #c8b5eb38 98%, transparent), radial-gradient(circle 130px at 94% 65%, #ffdaab35 98%, transparent), radial-gradient(circle 45px at 86% 12%, #bbdfc538 98%, transparent); animation: student-background-drift 18s ease-in-out infinite alternate; }
 .teacher-ui .eyebrow, .teacher-ui .back-link-inline { color: var(--teacher-accent); }
 .teacher-ui .muted { color: #686b7e; }
