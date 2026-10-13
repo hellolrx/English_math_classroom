@@ -109,7 +109,7 @@ onUnmounted(stopParticipantPolling)
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell teacher-ui teacher-classroom-builder">
     <header class="topbar">
       <div>
         <RouterLink class="back-link-inline" to="/teacher">← 返回老师工作台</RouterLink>

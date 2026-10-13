@@ -53,13 +53,26 @@ async function submit() {
 </script>
 
 <template>
-  <main class="auth-shell" :class="{ 'student-ui student-login': mode === 'student' }">
-    <div :class="mode === 'student' ? 'student-login-layout' : 'teacher-login-layout'">
-    <div v-if="mode === 'student'" class="student-login-intro">
-      <p class="eyebrow">A LITTLE PRACTICE, EVERY DAY</p>
-      <h2>每天學一點，<br />慢慢進步。</h2>
-      <p>從一個單詞、一道題目開始，<br />找到自己的學習節奏。</p>
-      <svg class="student-login-art" viewBox="0 0 320 220" fill="none" aria-hidden="true">
+  <main class="auth-shell student-ui student-login" :class="{ 'teacher-ui teacher-login': mode === 'teacher' }">
+    <div class="student-login-layout">
+    <div class="student-login-intro">
+      <p class="eyebrow">{{ mode === 'teacher' ? 'MAKE EVERY LESSON COUNT' : 'A LITTLE PRACTICE, EVERY DAY' }}</p>
+      <h2 v-if="mode === 'teacher'">讓每一道題，<br />連起整個課堂。</h2>
+      <h2 v-else>每天學一點，<br />慢慢進步。</h2>
+      <p v-if="mode === 'teacher'">準備題目、邀請學生，<br />一起看見學習的進步。</p>
+      <p v-else>從一個單詞、一道題目開始，<br />找到自己的學習節奏。</p>
+      <svg v-if="mode === 'teacher'" class="student-login-art" viewBox="0 0 320 220" fill="none" aria-hidden="true">
+        <circle cx="160" cy="110" r="94" fill="#eee7fc" />
+        <rect x="43" y="39" width="234" height="139" rx="20" fill="#d4c5eb" />
+        <rect x="43" y="33" width="234" height="139" rx="20" fill="white" stroke="#b398d7" stroke-width="3" />
+        <rect x="60" y="50" width="200" height="96" rx="12" fill="#f6f1fc" />
+        <text x="82" y="111" fill="#7652a0" font-size="38" font-weight="800">x + y</text>
+        <path d="M117 196h86M144 175v21M176 175v21" stroke="#b398d7" stroke-width="6" stroke-linecap="round" />
+        <circle cx="239" cy="153" r="23" fill="#ffdb9b" />
+        <path d="M229 153l7 7 13-14" stroke="#996011" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M34 28v14M27 35h14M287 98v14M280 105h14" stroke="#96caa3" stroke-width="4" stroke-linecap="round" />
+      </svg>
+      <svg v-else class="student-login-art" viewBox="0 0 320 220" fill="none" aria-hidden="true">
         <circle cx="157" cy="110" r="94" fill="#e0f2fe" />
         <rect x="43" y="67" width="104" height="117" rx="20" fill="#c8e6a9" transform="rotate(-10 43 67)" />
         <rect x="47" y="60" width="104" height="117" rx="20" fill="#f4fce9" stroke="#91c568" stroke-width="3" transform="rotate(-10 47 60)" />
@@ -73,7 +86,7 @@ async function submit() {
         <circle cx="233" cy="28" r="7" fill="#ffc800" />
       </svg>
     </div>
-    <section class="auth-card" :class="{ 'student-login-card': mode === 'student' }">
+    <section class="auth-card student-login-card">
       <div class="brand-mark">數</div>
       <p class="eyebrow">ENGLISH MATH CLASSROOM</p>
       <h1>{{ mode === 'teacher' ? '老師登入' : '學生登入' }}</h1>
@@ -104,7 +117,3 @@ async function submit() {
     </div>
   </main>
 </template>
-
-<style scoped>
-.teacher-login-layout { display: contents; }
-</style>
