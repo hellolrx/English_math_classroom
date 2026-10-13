@@ -171,3 +171,40 @@ body:has(.student-ui) {
   .student-ui :is(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card):hover:not(:disabled),
   .student-ui :is(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card):active:not(:disabled) { transform: none; }
 }
+
+/* Vocabulary entry and focused study use the existing learning APIs. */
+.student-ui .word-mode-selector { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.student-ui .word-entry-card { margin-top: 28px; padding: 32px 24px; text-align: center; border: 2px solid #c9dfed; border-radius: 26px; background: linear-gradient(135deg, #eef8ff, #f5fbea); box-shadow: 0 5px 0 #dce9ee; }
+.student-ui .word-entry-symbol { display: inline-grid; place-items: center; width: 72px; height: 72px; margin-bottom: 18px; border-radius: 22px; color: #146a95; background: #d6efff; font-size: 32px; font-weight: 800; transform: rotate(-6deg); }
+.student-ui.word-study-focused { min-height: 100svh; min-height: 100dvh; display: flex; flex-direction: column; padding-top: 24px; padding-bottom: 24px; }
+.student-ui .word-focus-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #146a95; font-weight: 800; }
+.student-ui.word-study-focused .word-card { flex: 1; width: 100%; min-height: 520px; grid-template-rows: auto 1fr auto; align-items: center; gap: 24px; padding: 28px; background: radial-gradient(ellipse at 100% 0, #d9effe 0, transparent 60%), linear-gradient(145deg, #fff, #f5fbea); border-color: #c9dfed; }
+.student-ui .word-card-progress { width: 100%; }
+.student-ui .word-card-progress .eyebrow { margin-bottom: 12px; }
+.student-ui .word-card-progress progress { display: block; width: 100%; height: 7px; border: 0; border-radius: 8px; overflow: hidden; appearance: none; background: #ddeaf1; accent-color: #1cb0f6; }
+.student-ui .word-card-progress progress::-webkit-progress-bar { background: #ddeaf1; }
+.student-ui .word-card-progress progress::-webkit-progress-value { background: #1cb0f6; border-radius: 8px; }
+.student-ui .word-card-progress progress::-moz-progress-bar { background: #1cb0f6; }
+.student-ui .word-card-content { min-width: 0; width: 100%; display: grid; justify-items: center; gap: 24px; }
+.student-ui .word-card-label { color: #60869c; font-size: 10px; letter-spacing: .12em; }
+.student-ui .word-card-content h2 { font-size: clamp(34px, 7vw, 68px); }
+.student-ui .word-card-content .muted { margin: 0; font-size: 14px; }
+.student-ui .word-card-content .word-meaning { font-size: clamp(18px, 3vw, 26px); padding: 18px; line-height: 1.5; background: #ffffffc9; border: 1px solid #cce5f2; }
+.student-ui .word-card-actions { width: 100%; display: grid; justify-items: center; gap: 12px; }
+.student-ui .word-card-actions .choice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.student-ui .word-card-actions .choice-card { padding: 14px 8px; }
+.student-ui .word-card-actions > .primary-button { width: min(100%, 360px); min-height: 56px; }
+.student-ui .word-card-actions .muted { margin: 0; }
+.student-ui .word-feedback { position: fixed; z-index: 20; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); pointer-events: none; text-align: center; }
+.student-ui .word-feedback > span { display: block; padding: 10px 18px; border-radius: 20px; background: #164c65; color: #fff; box-shadow: 0 4px 18px #164c6522; font-size: 14px; }
+.student-ui .word-confetti { position: absolute; left: 50%; bottom: 60px; }
+.student-ui .word-confetti i { position: absolute; width: 8px; height: 13px; border-radius: 2px; background: var(--color); opacity: 0; animation: word-confetti-burst 850ms var(--delay) ease-out both; }
+@keyframes word-confetti-burst { 0% { transform: translate(0, 0) rotate(0); opacity: 1; } 60% { opacity: 1; } 100% { transform: translate(var(--x), -200px) rotate(var(--turn)); opacity: 0; } }
+@media (max-width: 760px) {
+  .student-ui.word-study-focused { width: 100%; padding: calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .student-ui.word-study-focused .word-card { min-height: 0; margin-top: 14px; padding: 24px 16px; gap: 20px; border-radius: 24px; }
+  .student-ui .word-card-actions .choice-card { font-size: 14px; min-height: 54px; }
+  .student-ui .word-card-content { gap: 20px; }
+  .student-ui .word-focus-header .secondary-button { padding: 10px 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .student-ui .word-confetti { display: none; } }

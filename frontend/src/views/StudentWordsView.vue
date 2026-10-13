@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getStudentWords, getStudentWordReview, rateStudentWord } from '../api/client'
 const grades = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']
 const mode = ref('learn')
@@ -17,6 +17,16 @@ const revealed = ref(false)
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
+const focused = ref(false)
+const celebration = ref(0)
+const feedback = ref('')
+let feedbackTimer
+const particles = Array.from({ length: 18 }, (_, i) => ({
+  '--x': `${(i % 9 - 4) * 32}px`,
+  '--turn': `${(i % 2 ? 1 : -1) * (160 + i * 23)}deg`,
+  '--delay': `${(i % 3) * 30}ms`,
+  '--color': ['#1cb0f6', '#9bd75d', '#ffd45b', '#b59ae6'][i % 4],
+}))
 let loadVersion = 0
 const current = computed(() => words.value[index.value])
 const canRestart = computed(() => mode.value === 'learn' && totalCount.value > 0 && learnedCount.value === totalCount.value && !current.value)
@@ -110,6 +120,10 @@ async function rate(rating) {
   try {
     const id = word.id || word.word_id
     await rateStudentWord({ word_id: id, rating })
+    celebration.value += 1
+    feedback.value = { forgot: '已記錄，慢慢熟悉就好', fuzzy: '再見幾次，就更熟悉了', clear: '記得很清楚，繼續加油！' }[rating]
+    clearTimeout(feedbackTimer)
+    feedbackTimer = setTimeout(() => { feedback.value = '' }, 1400)
     if (mode.value === 'learn') {
       if (repeatRound.value) {
         const state = readRepeatState() || { active: true, roundNumber: roundNumber.value, completedIds: [] }
@@ -143,9 +157,11 @@ async function restartRound() {
 async function switchMode(value) { mode.value = value; await load() }
 async function switchGrade(value) { grade.value = value; await load() }
 onMounted(load)
+onUnmounted(() => clearTimeout(feedbackTimer))
 </script>
 <template>
-  <main class="app-shell student-home-shell student-ui">
+  <main class="app-shell student-home-shell student-ui word-study" :class="{ 'word-study-focused': focused }">
+    <template v-if="!focused">
     <header class="topbar"><div>
       <RouterLink class="back-link-inline" to="/student">← 返回学生工作台</RouterLink>
       <p class="eyebrow">VOCABULARY</p><h1>单词学习</h1>
@@ -154,21 +170,40 @@ onMounted(load)
     <div class="grade-selector" role="group" aria-label="选择单词年级">
       <button v-for="item in grades" :key="item" class="grade-card" :class="{ active: grade === item }" :disabled="saving" @click="switchGrade(item)">{{ item }}</button>
     </div>
-    <div class="choice-grid">
+    <div class="choice-grid word-mode-selector">
       <button class="choice-card" :class="{ active: mode === 'learn' }" :disabled="saving" @click="switchMode('learn')">学习</button>
       <button class="choice-card" :class="{ active: mode === 'review' }" :disabled="saving" @click="switchMode('review')">复习</button>
     </div>
+    <section class="word-entry-card">
+      <span class="word-entry-symbol" aria-hidden="true">Aa</span>
+      <h2>準備好，學一點新單詞</h2>
+      <p class="muted">{{ grade }} · {{ mode === 'learn' ? '學習' : '到期復習' }}</p>
+      <p v-if="!loading && !error" class="muted">{{ progressText }}</p>
+      <button class="primary-button" :disabled="loading || !!error" @click="focused = true">{{ mode === 'learn' ? '開始學習' : '開始復習' }}</button>
+    </section>
+    </template>
+    <header v-else class="word-focus-header">
+      <button class="secondary-button" :disabled="saving" @click="focused = false">← 返回選擇</button>
+      <span>{{ grade }} · {{ mode === 'learn' ? '學習' : '復習' }}</span>
+    </header>
     <p v-if="loading" class="loading-state">正在读取单词…</p>
     <template v-else>
       <p v-if="error" class="error-message" role="alert">{{ error }}</p>
-      <template v-if="!error || current">
-        <p class="muted">{{ progressText }}</p>
+      <template v-if="focused && (!error || current)">
         <section v-if="current" class="word-card">
-          <p class="eyebrow">{{ mode === 'learn' ? '学习' : '复习' }} · {{ index + 1 }} / {{ words.length }}</p>
+          <div class="word-card-progress">
+            <p class="eyebrow">{{ mode === 'learn' ? '学习' : '复习' }} · {{ index + 1 }} / {{ words.length }}</p>
+            <progress :value="index" :max="words.length" aria-label="本次单词进度"></progress>
+          </div>
+          <div class="word-card-content">
+          <span class="word-card-label">THINK · REVEAL · REMEMBER</span>
           <h2>{{ current.word || current.words?.word }}</h2>
+          <p v-if="!revealed" class="muted">先想一想，你記得它的意思嗎？</p>
+          <p v-else class="word-meaning">{{ current.meaning || current.words?.meaning }}</p>
+          </div>
+          <div class="word-card-actions">
           <button v-if="!revealed" class="primary-button" @click="revealed = true">查看词义</button>
           <template v-else>
-            <p class="word-meaning">{{ current.meaning || current.words?.meaning }}</p>
             <div class="choice-grid">
               <button class="choice-card student-rating-forgot" :disabled="saving" @click="rate('forgot')">忘记</button>
               <button class="choice-card student-rating-fuzzy" :disabled="saving" @click="rate('fuzzy')">模糊</button>
@@ -176,6 +211,7 @@ onMounted(load)
             </div>
             <p v-if="saving" class="muted" role="status">正在保存学习进度…</p>
           </template>
+          </div>
         </section>
         <section v-else class="word-card">
           <p class="empty-state" role="status">{{ emptyMessage }}</p>
@@ -183,5 +219,9 @@ onMounted(load)
         </section>
       </template>
     </template>
+    <div v-if="feedback" :key="celebration" class="word-feedback" aria-live="polite">
+      <div class="word-confetti" aria-hidden="true"><i v-for="(particle, n) in particles" :key="n" :style="particle"></i></div>
+      <span>{{ feedback }}</span>
+    </div>
   </main>
 </template>
