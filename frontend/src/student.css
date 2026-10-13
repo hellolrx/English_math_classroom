@@ -124,7 +124,10 @@ body:has(.student-ui) {
 .student-ui .topbar h1 { overflow-wrap: anywhere; }
 .student-ui .topbar > button { flex-shrink: 0; }
 .student-ui .word-meaning { max-width: 100%; overflow-wrap: anywhere; }
-.student-ui .draft-toggle { min-height: 48px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+.student-ui .draft-toggle { min-height: 48px; top: calc(18px + env(safe-area-inset-top, 0px)); bottom: auto; }
+.student-ui:has(.draft-toggle) .topbar { padding-right: 100px; }
+.student-ui .round-submit-bar { position: static; justify-content: center; }
+.student-ui .round-instructions { margin: 0 0 18px; line-height: 1.7; }
 .student-ui .draft-toolbar { top: calc(18px + env(safe-area-inset-top, 0px)); }
 @media (max-width: 760px) {
   .student-ui.app-shell { width: calc(100% - 28px); padding: 28px 0 calc(100px + env(safe-area-inset-bottom, 0px)); }
@@ -151,7 +154,6 @@ body:has(.student-ui) {
   .student-ui .student-set-card { grid-template-columns: 38px minmax(0, 1fr); gap: 8px 12px; padding: 14px; }
   .student-ui .student-set-card .student-topic-number { grid-row: span 2; min-height: 42px; }
   .student-ui .student-topic-status { grid-column: 2; }
-  .student-ui .round-submit-bar { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
   .student-ui .round-submit-bar .primary-button { width: 100%; white-space: normal; }
   .student-ui .student-session-card { padding: 26px 18px; }
   .student-ui .student-module-heading > div { min-width: 0; }
@@ -193,6 +195,9 @@ body:has(.student-ui) {
 .student-ui .word-card-actions { width: 100%; display: grid; justify-items: center; gap: 12px; }
 .student-ui .word-card-actions .choice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .student-ui .word-card-actions .choice-card { padding: 14px 8px; }
+.student-ui .word-card-actions .student-rating-forgot:hover:not(:disabled) { border-color: #ffc4c8; color: #a12734; background: #fff0f1; }
+.student-ui .word-card-actions .student-rating-fuzzy:hover:not(:disabled) { border-color: #ffe28a; color: #795600; background: #fff8d9; }
+.student-ui .word-card-actions .student-rating-clear:hover:not(:disabled) { border-color: #c8e6a9; color: #356b12; background: #edf9df; }
 .student-ui .word-card-actions > .primary-button { width: min(100%, 360px); min-height: 56px; }
 .student-ui .word-card-actions .muted { margin: 0; }
 .student-ui .word-feedback { position: fixed; z-index: 20; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); pointer-events: none; text-align: center; }

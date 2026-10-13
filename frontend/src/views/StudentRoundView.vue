@@ -162,6 +162,7 @@ onBeforeUnmount(() => {
     <template v-else>
       <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
       <p v-if="completed" class="success-message">本輪已提交。重新練習會建立新的答題輪次。</p>
+      <p v-if="!completed" class="muted round-instructions">可以逐題確定，也可以最後整份提交；未答題會標記為未答。</p>
       <section class="student-round-list">
         <article v-for="(question, index) in questions" :key="question.id" class="student-round-question">
           <h2>第 {{ index + 1 }} 題</h2>
@@ -192,7 +193,6 @@ onBeforeUnmount(() => {
         </article>
       </section>
       <div class="round-submit-bar">
-        <p v-if="!completed" class="muted">可以逐題確定，也可以最後整份提交；未答題會標記為未答。</p>
         <button v-if="!completed" class="primary-button" :disabled="busy || !questions.length" @click="submitWholeRound">
           {{ busy ? '提交中…' : `整份提交（未答 ${unansweredCount} 題）` }}
         </button>
