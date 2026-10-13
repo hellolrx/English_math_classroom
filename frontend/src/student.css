@@ -1,0 +1,89 @@
+/* Student-only visual treatment. Keep dimensions fixed during interaction. */
+.student-ui {
+  --student-ink: #4b4b4b;
+  --student-muted: #66717d;
+  --student-border: #e1e6eb;
+  color: var(--student-ink);
+}
+body:has(.student-ui) { background: #f7f9fa; }
+.student-ui.auth-shell { background: #f7f9fa; }
+.student-ui .topbar h1 { color: #38424c; letter-spacing: -.025em; }
+.student-ui .eyebrow { color: #1679ac; }
+.student-ui .muted, .student-ui .empty-state { color: var(--student-muted); }
+.student-ui .student-tool-panel,
+.student-ui .student-set-section,
+.student-ui .student-round-question,
+.student-ui .word-card,
+.student-ui .student-session-card {
+  border: 2px solid var(--student-border);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 5px 0 #e7ebef;
+}
+.student-ui .student-tool-panel { padding: 28px; gap: 24px; }
+.student-ui .student-vocabulary-panel { border-color: #c8e6b5; background: #f6fced; box-shadow: 0 5px 0 #deedce; }
+.student-ui .student-module-heading { display: flex; align-items: center; gap: 18px; min-width: 0; }
+.student-ui .student-module-heading .muted { margin-bottom: 0; }
+.student-ui .student-module-heading .eyebrow { margin-bottom: 6px; }
+.student-ui .student-module-icon { display: grid; place-items: center; width: 60px; height: 60px; flex: 0 0 60px; border-radius: 18px; color: #1275a6; background: #e0f2fe; box-shadow: 0 4px 0 #bedef1; }
+.student-ui .student-module-icon svg { width: 30px; height: 30px; }
+.student-ui .student-vocabulary-panel .student-module-icon { color: #438014; background: #e3f4cd; box-shadow: 0 4px 0 #c8e4aa; }
+.student-ui :where(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card) {
+  --button-shadow: #d9dfe5;
+  min-height: 48px;
+  border: 2px solid var(--student-border);
+  border-radius: 16px;
+  color: var(--student-ink);
+  background: #fff;
+  box-shadow: 0 4px 0 var(--button-shadow);
+  transition: transform .14s ease, box-shadow .14s ease, background-color .14s ease, border-color .14s ease;
+}
+.student-ui .primary-button { --button-shadow: #46a302; display: inline-flex; align-items: center; justify-content: center; border-color: #58cc02; background: #58cc02; color: #204400; white-space: nowrap; }
+.student-ui .primary-button:hover:not(:disabled) { background: #65d711; }
+.student-ui :is(.choice-card.active, .grade-card.active, .student-options button.selected) { --button-shadow: #1899d6; border-color: #1cb0f6; color: #095b84; background: #e0f2fe; }
+.student-ui .student-options button { min-height: 60px; font-size: 20px; }
+.student-ui :is(.choice-card, .grade-card, .student-set-card, .secondary-button):hover:not(:disabled) { border-color: #1cb0f6; color: #095b84; background: #edf8ff; }
+.student-ui :is(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card):hover:not(:disabled) { transform: translateY(-1px); }
+.student-ui :is(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card):active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--button-shadow); }
+.student-ui :is(button, a, input, textarea):focus-visible { outline: 3px solid #1275a6; outline-offset: 4px; }
+.student-ui :is(button, .primary-button):disabled { cursor: not-allowed; opacity: .65; transform: none; }
+.student-ui :is(input, textarea) { border: 2px solid var(--student-border); border-radius: 14px; color: var(--student-ink); background: #fff; }
+.student-ui input:focus { border-color: #1cb0f6; box-shadow: 0 0 0 3px #e0f2fe; }
+.student-ui .back-link-inline { border: 0; padding: 4px 0; color: #1679ac; background: transparent; font-weight: 700; }
+.student-ui .student-set-card { align-items: center; min-width: 0; }
+.student-ui .student-set-card strong { overflow-wrap: anywhere; }
+.student-ui .student-set-card span { color: var(--student-muted); font-size: 13px; }
+.student-ui .word-card { position: relative; overflow: hidden; padding: 48px 28px 36px; border-top: 6px solid #1cb0f6; }
+.student-ui .word-card h2 { color: #38424c; overflow-wrap: anywhere; max-width: 100%; }
+.student-ui .word-meaning { color: #095b84; background: #e0f2fe; border-radius: 16px; }
+.student-ui .word-card .choice-grid { gap: 14px; }
+.student-ui .student-rating-forgot { --button-shadow: #efb5b8; color: #a12734; border-color: #ffc4c8; background: #fff0f1; }
+.student-ui .student-rating-fuzzy { --button-shadow: #e7cb72; color: #795600; border-color: #ffe28a; background: #fff8d9; }
+.student-ui .student-rating-clear { --button-shadow: #add581; color: #356b12; border-color: #c8e6a9; background: #edf9df; }
+.student-ui .student-round-question { padding: 26px; }
+.student-ui .student-round-question h2 { display: inline-flex; padding: 7px 12px; color: #095b84; background: #e0f2fe; border-radius: 12px; font-size: 16px; }
+.student-ui .question-image { max-width: 100%; max-height: none; height: auto; border-radius: 12px; margin-bottom: 24px; }
+.student-ui .round-answer-actions { gap: 14px; }
+.student-ui .success-message { color: #356b12; background: #e7f8d6; }
+.student-ui .error-message { color: #a12734; background: #ffedef; }
+.student-ui .pending-message { color: #795600; background: #fff8d9; }
+.student-ui .round-submit-bar { padding: 18px; border: 2px solid var(--student-border); border-radius: 18px; box-shadow: 0 -5px 24px #4b4b4b0a; }
+.student-ui .countdown { padding: 10px 16px; color: #356b12; background: #edf9df; }
+.student-ui .countdown.urgent { color: #a12734; background: #ffedef; }
+.student-ui .student-mark { background: #e0f2fe; color: #095b84; box-shadow: 0 4px 0 #bedef1; }
+@media (max-width: 760px) {
+  .student-ui .student-tool-panel, .student-ui .student-round-question { padding: 20px; }
+  .student-ui .student-module-heading { gap: 14px; }
+  .student-ui .student-module-icon { width: 48px; height: 48px; flex-basis: 48px; border-radius: 14px; }
+  .student-ui .student-tool-panel h2 { font-size: 20px; }
+  .student-ui .word-card { padding: 32px 18px; }
+  .student-ui .word-card .choice-grid { grid-template-columns: 1fr; }
+  .student-ui .fixed-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .student-ui .code-form { width: 100%; }
+  .student-ui .round-submit-bar { bottom: 76px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .student-ui :is(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card) { transition: none; }
+  .student-ui :is(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card):hover:not(:disabled),
+  .student-ui :is(.primary-button, .secondary-button, .choice-card, .grade-card, .student-options button, .student-set-card):active:not(:disabled) { transform: none; }
+}

@@ -148,7 +148,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="app-shell student-home-shell">
+  <main class="app-shell student-home-shell student-ui">
     <header class="topbar">
       <div>
         <button class="back-link-inline" type="button" @click="router.push('/student')">返回學生工作台</button>

@@ -145,7 +145,7 @@ async function switchGrade(value) { grade.value = value; await load() }
 onMounted(load)
 </script>
 <template>
-  <main class="app-shell student-home-shell">
+  <main class="app-shell student-home-shell student-ui">
     <header class="topbar"><div>
       <RouterLink class="back-link-inline" to="/student">← 返回学生工作台</RouterLink>
       <p class="eyebrow">VOCABULARY</p><h1>单词学习</h1>
@@ -170,9 +170,9 @@ onMounted(load)
           <template v-else>
             <p class="word-meaning">{{ current.meaning || current.words?.meaning }}</p>
             <div class="choice-grid">
-              <button class="choice-card" :disabled="saving" @click="rate('forgot')">忘记</button>
-              <button class="choice-card" :disabled="saving" @click="rate('fuzzy')">模糊</button>
-              <button class="choice-card" :disabled="saving" @click="rate('clear')">清楚记得</button>
+              <button class="choice-card student-rating-forgot" :disabled="saving" @click="rate('forgot')">忘记</button>
+              <button class="choice-card student-rating-fuzzy" :disabled="saving" @click="rate('fuzzy')">模糊</button>
+              <button class="choice-card student-rating-clear" :disabled="saving" @click="rate('clear')">清楚记得</button>
             </div>
             <p v-if="saving" class="muted" role="status">正在保存学习进度…</p>
           </template>

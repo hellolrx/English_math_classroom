@@ -47,7 +47,7 @@ onMounted(load)
 </script>
 
 <template>
-  <main class="app-shell student-home-shell">
+  <main class="app-shell student-home-shell student-ui">
     <header class="topbar">
       <div>
         <p class="eyebrow">STUDENT WORKBENCH</p>
@@ -60,13 +60,13 @@ onMounted(load)
     <p v-else-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
     <template v-else>
       <section class="student-tool-panel">
-        <div><h2>老師指定練習</h2><p class="muted">輸入練習碼進入整份指定題目。</p></div>
+        <div class="student-module-heading"><span class="student-module-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2M9 9h6M9 13h6M9 17h3"/></svg></span><div><p class="eyebrow">MATH PRACTICE</p><h2>老師指定練習</h2><p class="muted">輸入練習碼進入整份指定題目。</p></div></div>
         <form class="code-form" @submit.prevent="enterCode">
-          <input v-model="code" autocomplete="off" placeholder="輸入練習碼" />
+          <input v-model="code" autocomplete="off" aria-label="練習碼" placeholder="輸入練習碼" />
           <button class="primary-button" type="submit" :disabled="!code.trim()">開始</button>
         </form>
       </section>
-      <section class="student-tool-panel"><div><h2>单词学习</h2><p class="muted">按年级查看单词，翻卡后选择记忆程度。</p></div><RouterLink class="primary-button" to="/student/words">开始学习</RouterLink></section>
+      <section class="student-tool-panel student-vocabulary-panel"><div class="student-module-heading"><span class="student-module-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v15M3 4h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5v15h-5a4 4 0 0 0-4 2 4 4 0 0 0-4-2H3z"/></svg></span><div><p class="eyebrow">VOCABULARY</p><h2>单词学习</h2><p class="muted">按年级查看单词，翻卡后选择记忆程度。</p></div></div><RouterLink class="primary-button" to="/student/words">开始学习</RouterLink></section>
       <section v-if="student?.grade === 'S6'" class="student-set-section">
         <div class="panel-heading"><div><p class="eyebrow">S6</p><h2>數學主題</h2></div></div>
         <p v-if="topicsError" class="error-message" role="alert">數學主題讀取失敗：{{ topicsError }}</p>
